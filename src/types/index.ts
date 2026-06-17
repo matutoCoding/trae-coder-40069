@@ -176,6 +176,7 @@ export interface InspectionTaskItem {
   id: string;
   equipmentId: string;
   equipmentName: string;
+  equipmentType: string;
   status: 'pending' | 'in-progress' | 'completed' | 'skipped';
   inspectionId?: string;
   vibration?: number;
@@ -205,4 +206,10 @@ export interface AlarmPoint {
   value: number;
   type: 'upper' | 'lower';
   level: 'warning' | 'alarm';
+  alarmId?: string;
+  parameterName?: string;
+  limitValue?: number;
+  status?: 'active' | 'acknowledged' | 'cleared';
+  operator?: string;
+  handleRemark?: string;
 }

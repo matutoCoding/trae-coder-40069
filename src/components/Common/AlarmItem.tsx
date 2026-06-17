@@ -1,7 +1,11 @@
-import { Bell, Check, X } from 'lucide-react';
+import { useState } from 'react';
+import { Bell, Check, X, MessageSquare } from 'lucide-react';
+import { Modal, Form, Input } from 'antd';
 import { useAppStore } from '@/store';
 import { getStatusBgColor, getAlarmLevelText, formatTime, cn } from '@/utils';
 import type { Alarm } from '@/types';
+
+const { TextArea } = Input;
 
 interface AlarmItemProps {
   alarm: Alarm;
@@ -9,13 +13,42 @@ interface AlarmItemProps {
 
 export default function AlarmItem({ alarm }: AlarmItemProps) {
   const { acknowledgeAlarm, clearAlarm, currentUser } = useAppStore();
+  const [ackModalVisible, setAckModalVisible] = useState(false);
+  const [clearModalVisible, setClearModalVisible] = useState(false);
+  const [ackForm] = Form.useForm();
+  const [clearForm] = Form.useForm();
 
   const handleAcknowledge = () => {
-    acknowledgeAlarm(alarm.id, currentUser.name);
+    setAckModalVisible(true);
+  };
+
+  const handleConfirmAcknowledge = () => {
+    ackForm.validateFields().then((values) => {
+      acknowledgeAlarm(alarm.id, currentUser.name, values.handleRemark);
+      setAckModalVisible(false);
+      ackForm.resetFields();
+    });
   };
 
   const handleClear = () => {
-    clearAlarm(alarm.id);
+    setClearModalVisible(true);
+  };
+
+  const handleConfirmClear = () => {
+    clearForm.validateFields().then((values) => {
+      clearAlarm(alarm.id, values.handleRemark);
+      setClearModalVisible(false);
+      clearForm.resetFields();
+    });
+  };
+
+  const getStatusText = (status: string) => {
+    const map: Record<string, string> = {
+      active: '活动',
+      acknowledged: '已确认',
+      cleared: '已消除',
+    };
+    return map[status] || status;
   };
 
   return (
@@ -39,7 +72,7 @@ export default function AlarmItem({ alarm }: AlarmItemProps) {
               'px-1.5 py-0.5 rounded text-xs border',
               getStatusBgColor(alarm.status)
             )}>
-              {alarm.status === 'active' ? '活动' : alarm.status === 'acknowledged' ? '已确认' : '已消除'}
+              {getStatusText(alarm.status)}
             </span>
           </div>
           
@@ -57,6 +90,22 @@ export default function AlarmItem({ alarm }: AlarmItemProps) {
               <span className="ml-2">· 处理人: {alarm.operator}</span>
             )}
           </div>
+
+          {alarm.handleRemark && (
+            <div className="mt-2 p-2 rounded bg-white/5 text-xs text-industrial-subtext">
+              <div className="flex items-center gap-1 mb-1">
+                <MessageSquare size={12} />
+                <span>处理意见</span>
+              </div>
+              <p className="text-white/80">{alarm.handleRemark}</p>
+            </div>
+          )}
+
+          {alarm.status === 'cleared' && alarm.clearTime && (
+            <div className="text-xs text-industrial-subtext/70 mt-1">
+              消除时间: {formatTime(alarm.clearTime)}
+            </div>
+          )}
         </div>
 
         {alarm.status === 'active' && (
@@ -77,7 +126,74 @@ export default function AlarmItem({ alarm }: AlarmItemProps) {
             </button>
           </div>
         )}
+
+        {alarm.status === 'acknowledged' && (
+          <div className="flex gap-1">
+            <button
+              onClick={handleClear}
+              className="p-1.5 rounded hover:bg-white/10 transition-colors"
+              title="消除报警"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
       </div>
+
+      <Modal
+        title="确认报警"
+        open={ackModalVisible}
+        onOk={handleConfirmAcknowledge}
+        onCancel={() => {
+          setAckModalVisible(false);
+          ackForm.resetFields();
+        }}
+        okText="确认"
+        cancelText="取消"
+        width={500}
+        styles={{ body: { backgroundColor: '#141A2E' } }}
+      >
+        <Form form={ackForm} layout="vertical">
+          <Form.Item
+            name="handleRemark"
+            label="处理意见"
+            rules={[{ required: true, message: '请输入处理意见' }]}
+          >
+            <TextArea rows={4} placeholder="请输入报警确认的处理意见..." />
+          </Form.Item>
+          <div className="text-xs text-industrial-subtext">
+            确认人: {currentUser.name}
+          </div>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="消除报警"
+        open={clearModalVisible}
+        onOk={handleConfirmClear}
+        onCancel={() => {
+          setClearModalVisible(false);
+          clearForm.resetFields();
+        }}
+        okText="消除"
+        cancelText="取消"
+        okType="danger"
+        width={500}
+        styles={{ body: { backgroundColor: '#141A2E' } }}
+      >
+        <Form form={clearForm} layout="vertical">
+          <Form.Item
+            name="handleRemark"
+            label="最终处理结果"
+            rules={[{ required: true, message: '请输入最终处理结果' }]}
+          >
+            <TextArea rows={4} placeholder="请输入报警消除的最终处理结果..." />
+          </Form.Item>
+          <div className="text-xs text-industrial-subtext">
+            操作人: {currentUser.name}
+          </div>
+        </Form>
+      </Modal>
     </div>
   );
 }

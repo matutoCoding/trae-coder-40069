@@ -21,7 +21,10 @@ export default function Monitoring() {
   const [historyFilterForm] = Form.useForm();
   const [historyLevelFilter, setHistoryLevelFilter] = useState<string>('all');
   const [historyParamFilter, setHistoryParamFilter] = useState<string>('all');
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<string>('all');
+  const [historyOperatorFilter, setHistoryOperatorFilter] = useState<string>('all');
   const [historyDateRange, setHistoryDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null] | null>(null);
+  const [selectedAlarmPoint, setSelectedAlarmPoint] = useState<any>(null);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -44,6 +47,12 @@ export default function Monitoring() {
       value: alarm.actualValue,
       type: alarm.actualValue > alarm.limitValue ? 'upper' : 'lower',
       level: alarm.level,
+      alarmId: alarm.id,
+      parameterName: alarm.parameterName,
+      limitValue: alarm.limitValue,
+      status: alarm.status,
+      operator: alarm.operator,
+      handleRemark: alarm.handleRemark,
     }));
   }, [alarms, selectedParam]);
 
@@ -61,10 +70,22 @@ export default function Monitoring() {
     [alarms]
   );
 
+  const allOperators = useMemo(() => {
+    const operators = new Set<string>();
+    alarms.forEach(a => {
+      if (a.operator) operators.add(a.operator);
+    });
+    return Array.from(operators);
+  }, [alarms]);
+
   const filteredHistoryAlarms = useMemo(() => {
     return alarms.filter(alarm => {
       const matchLevel = historyLevelFilter === 'all' || alarm.level === historyLevelFilter;
       const matchParam = historyParamFilter === 'all' || alarm.parameterId === historyParamFilter;
+      const matchStatus = historyStatusFilter === 'all' || 
+        (historyStatusFilter === 'unclosed' && alarm.status !== 'cleared') ||
+        alarm.status === historyStatusFilter;
+      const matchOperator = historyOperatorFilter === 'all' || alarm.operator === historyOperatorFilter;
       
       let matchDate = true;
       if (historyDateRange && historyDateRange[0] && historyDateRange[1]) {
@@ -72,9 +93,9 @@ export default function Monitoring() {
         matchDate = alarmDate.isAfter(historyDateRange[0]) && alarmDate.isBefore(historyDateRange[1]);
       }
       
-      return matchLevel && matchParam && matchDate;
+      return matchLevel && matchParam && matchStatus && matchOperator && matchDate;
     });
-  }, [alarms, historyLevelFilter, historyParamFilter, historyDateRange]);
+  }, [alarms, historyLevelFilter, historyParamFilter, historyStatusFilter, historyOperatorFilter, historyDateRange]);
 
   const alarmStats = useMemo(() => ({
     total: alarms.length,
@@ -416,7 +437,7 @@ export default function Monitoring() {
             className="bg-industrial-card border-industrial-border"
             styles={{ header: { borderBottom: '1px solid #1E2A45' }, body: { padding: '16px' } }}
             extra={
-              <Space>
+              <Space wrap>
                 <DatePicker.RangePicker
                   value={historyDateRange}
                   onChange={(dates) => setHistoryDateRange(dates as any)}
@@ -434,6 +455,18 @@ export default function Monitoring() {
                   <Option value="alarm">报警</Option>
                 </Select>
                 <Select
+                  value={historyStatusFilter}
+                  onChange={setHistoryStatusFilter}
+                  style={{ width: 120 }}
+                  size="small"
+                >
+                  <Option value="all">全部状态</Option>
+                  <Option value="unclosed">未闭环</Option>
+                  <Option value="active">活动</Option>
+                  <Option value="acknowledged">已确认</Option>
+                  <Option value="cleared">已消除</Option>
+                </Select>
+                <Select
                   value={historyParamFilter}
                   onChange={setHistoryParamFilter}
                   style={{ width: 150 }}
@@ -444,12 +477,26 @@ export default function Monitoring() {
                     <Option key={p.id} value={p.id}>{p.name}</Option>
                   ))}
                 </Select>
+                <Select
+                  value={historyOperatorFilter}
+                  onChange={setHistoryOperatorFilter}
+                  style={{ width: 120 }}
+                  size="small"
+                  placeholder="处理人"
+                >
+                  <Option value="all">全部处理人</Option>
+                  {allOperators.map(op => (
+                    <Option key={op} value={op}>{op}</Option>
+                  ))}
+                </Select>
                 <Button 
                   size="small" 
                   icon={<Filter size={14} />}
                   onClick={() => {
                     setHistoryLevelFilter('all');
+                    setHistoryStatusFilter('all');
                     setHistoryParamFilter('all');
+                    setHistoryOperatorFilter('all');
                     setHistoryDateRange(null);
                   }}
                 >
@@ -468,29 +515,34 @@ export default function Monitoring() {
                   title: '报警时间',
                   dataIndex: 'alarmTime',
                   key: 'alarmTime',
+                  width: 160,
                   render: (time: string) => formatDate(time),
                 },
                 {
                   title: '参数名称',
                   dataIndex: 'parameterName',
                   key: 'parameterName',
+                  width: 130,
                 },
                 {
                   title: '实际值',
                   dataIndex: 'actualValue',
                   key: 'actualValue',
+                  width: 80,
                   render: (val: number) => <span className="font-mono">{val}</span>,
                 },
                 {
                   title: '限值',
                   dataIndex: 'limitValue',
                   key: 'limitValue',
+                  width: 80,
                   render: (val: number) => <span className="font-mono text-red-400">{val}</span>,
                 },
                 {
                   title: '级别',
                   dataIndex: 'level',
                   key: 'level',
+                  width: 80,
                   render: (level: string) => (
                     <Tag color={level === 'alarm' ? 'red' : 'orange'}>
                       {level === 'alarm' ? '报警' : '警告'}
@@ -501,6 +553,7 @@ export default function Monitoring() {
                   title: '状态',
                   dataIndex: 'status',
                   key: 'status',
+                  width: 90,
                   render: (status: string) => {
                     const colorMap: Record<string, string> = {
                       active: 'red',
@@ -516,10 +569,25 @@ export default function Monitoring() {
                   },
                 },
                 {
-                  title: '操作员',
+                  title: '处理人',
                   dataIndex: 'operator',
                   key: 'operator',
+                  width: 100,
                   render: (val?: string) => val || '-',
+                },
+                {
+                  title: '处理意见',
+                  dataIndex: 'handleRemark',
+                  key: 'handleRemark',
+                  ellipsis: true,
+                  render: (val?: string) => val || '-',
+                },
+                {
+                  title: '消除时间',
+                  dataIndex: 'clearTime',
+                  key: 'clearTime',
+                  width: 160,
+                  render: (time?: string) => time ? formatDate(time) : '-',
                 },
               ]}
             />

@@ -422,6 +422,64 @@ export default function StartupShutdown() {
               </div>
             </div>
 
+            {displayPlan.status === 'executing' || displayPlan.status === 'completed' ? (
+              <div className="p-4 bg-industrial-border/20 rounded-lg">
+                <h4 className="text-sm font-medium text-white mb-4">执行汇总</h4>
+                <Row gutter={[16, 16]}>
+                  <Col xs={24} sm={8}>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-primary-400 font-mono">
+                        {displayPlan.steps.filter(s => s.status === 'completed').length}
+                      </div>
+                      <div className="text-xs text-industrial-subtext mt-1">已完成步骤</div>
+                    </div>
+                  </Col>
+                  <Col xs={24} sm={8}>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-400 font-mono">
+                        {[...new Set(displayPlan.steps.filter(s => s.operator).map(s => s.operator))].length}
+                      </div>
+                      <div className="text-xs text-industrial-subtext mt-1">执行人</div>
+                    </div>
+                  </Col>
+                  <Col xs={24} sm={8}>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-orange-400 font-mono">
+                        {(() => {
+                          const completedSteps = displayPlan.steps.filter(s => s.startTime && s.endTime);
+                          if (completedSteps.length === 0) return '-';
+                          let totalMs = 0;
+                          completedSteps.forEach(s => {
+                            totalMs += new Date(s.endTime!).getTime() - new Date(s.startTime!).getTime();
+                          });
+                          const hours = Math.floor(totalMs / (1000 * 60 * 60));
+                          const minutes = Math.floor((totalMs % (1000 * 60 * 60)) / (1000 * 60));
+                          return `${hours}h ${minutes}m`;
+                        })()}
+                      </div>
+                      <div className="text-xs text-industrial-subtext mt-1">总耗时</div>
+                    </div>
+                  </Col>
+                </Row>
+                {displayPlan.endTime && (
+                  <div className="text-center mt-3 pt-3 border-t border-industrial-border">
+                    <span className="text-xs text-industrial-subtext">完成时间: </span>
+                    <span className="text-sm text-white">{displayPlan.endTime}</span>
+                  </div>
+                )}
+                {[...new Set(displayPlan.steps.filter(s => s.operator).map(s => s.operator))].length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-industrial-border">
+                    <div className="text-xs text-industrial-subtext mb-2">执行人列表</div>
+                    <div className="flex flex-wrap gap-2">
+                      {[...new Set(displayPlan.steps.filter(s => s.operator).map(s => s.operator))].map((op, idx) => (
+                        <Tag key={idx} color="blue">{op}</Tag>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
             <div className="p-4">
               <h4 className="text-sm font-medium text-white mb-4">执行步骤</h4>
               <Timeline
@@ -454,6 +512,12 @@ export default function StartupShutdown() {
                               <div className="text-xs text-industrial-subtext/70">
                                 开始时间: {step.startTime}
                                 {step.endTime && ` · 完成时间: ${step.endTime}`}
+                                {step.startTime && step.endTime && (() => {
+                                  const diff = new Date(step.endTime!).getTime() - new Date(step.startTime!).getTime();
+                                  const hours = Math.floor(diff / (1000 * 60 * 60));
+                                  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                                  return ` · 耗时: ${hours}h${minutes}m`;
+                                })()}
                               </div>
                             )}
                           </div>

@@ -206,19 +206,40 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       shutdownPlans: state.shutdownPlans.map((plan) => {
         if (plan.id !== planId) return plan;
+        
+        const newSteps = plan.steps.map((step) => {
+          if (step.id !== stepId) return step;
+          const newStep = { ...step, status: status as any, operator: operator || step.operator };
+          if (status === 'in-progress' && !step.startTime) {
+            (newStep as any).startTime = now;
+          } else if (status === 'completed' && !step.endTime) {
+            (newStep as any).endTime = now;
+          }
+          return newStep;
+        });
+        
+        const allCompleted = newSteps.every(
+          (s) => s.status === 'completed' || s.status === 'skipped'
+        );
+        const hasInProgress = newSteps.some((s) => s.status === 'in-progress');
+        
+        let planStatus = plan.status;
+        let planEndTime = plan.endTime;
+        
+        if (hasInProgress && plan.status !== 'executing') {
+          planStatus = 'executing';
+        }
+        
+        if (allCompleted && newSteps.length > 0 && plan.status !== 'completed') {
+          planStatus = 'completed';
+          planEndTime = now;
+        }
+        
         return {
           ...plan,
-          status: status === 'in-progress' ? 'executing' : plan.status,
-          steps: plan.steps.map((step) => {
-            if (step.id !== stepId) return step;
-            const newStep = { ...step, status: status as any, operator };
-            if (status === 'in-progress') {
-              (newStep as any).startTime = now;
-            } else if (status === 'completed') {
-              (newStep as any).endTime = now;
-            }
-            return newStep;
-          }),
+          status: planStatus,
+          endTime: planEndTime,
+          steps: newSteps,
         };
       }),
     }));
@@ -265,14 +286,20 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   createInspectionTask: (unitId: string, shift: 'morning' | 'afternoon' | 'night') => {
     const { equipment } = get();
-    const unitEquipment = equipment.filter((e) => e.unitId === unitId && e.type === 'pump');
+    const unitEquipment = equipment.filter((e) => e.unitId === unitId);
     
-    const items: InspectionTaskItem[] = unitEquipment.map((eq, index) => ({
-      id: generateId(),
-      equipmentId: eq.id,
-      equipmentName: eq.name,
-      status: 'pending',
-    }));
+    const items: InspectionTaskItem[] = unitEquipment
+      .sort((a, b) => {
+        const typeOrder = { pump: 1, compressor: 2, 'heat-exchanger': 3, valve: 4, other: 5 };
+        return (typeOrder[a.type as keyof typeof typeOrder] || 99) - (typeOrder[b.type as keyof typeof typeOrder] || 99);
+      })
+      .map((eq) => ({
+        id: generateId(),
+        equipmentId: eq.id,
+        equipmentName: eq.name,
+        equipmentType: eq.type,
+        status: 'pending',
+      }));
 
     const today = new Date().toISOString().split('T')[0];
     const newTask: InspectionTask = {

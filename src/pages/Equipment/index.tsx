@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { 
-  Card, Table, Tag, Tabs, Modal, Form, Input, InputNumber, Select, Button, Space, message, List, Progress, Statistic, Alert, Row, Col
+  Card, Table, Tag, Tabs, Modal, Form, Input, InputNumber, Select, Button, Space, List, Progress, Statistic, Alert, Row, Col, message
 } from 'antd';
 import { 
   AlertTriangle, CheckCircle, Clock, Wrench, Plus, Thermometer, Activity, Zap, 
-  Play, Square, FileText, Edit
+  Play, Square, FileText, Edit, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { generateEquipmentStatusStats, getShiftText } from '@/mock';
@@ -16,6 +16,14 @@ import type { InspectionTask, InspectionTaskItem } from '@/types';
 const { Option } = Select;
 const { TextArea } = Input;
 
+const EQUIPMENT_TYPE_MAP: Record<string, string> = {
+  pump: '机泵设备',
+  compressor: '压缩机',
+  'heat-exchanger': '换热器',
+  valve: '关键阀门',
+  other: '辅助设备',
+};
+
 export default function EquipmentPage() {
   const { 
     equipment, inspections, inspectionTasks, currentInspectionTask,
@@ -26,6 +34,7 @@ export default function EquipmentPage() {
   const [inspectModalVisible, setInspectModalVisible] = useState(false);
   const [currentInspectItem, setCurrentInspectItem] = useState<InspectionTaskItem | null>(null);
   const [inspectForm] = Form.useForm();
+  const [expandedTypes, setExpandedTypes] = useState<Record<string, boolean>>({});
   
   const currentTaskFromStore = useMemo(() => 
     currentInspectionTask?.id 
@@ -44,9 +53,14 @@ export default function EquipmentPage() {
 
   const equipmentStats = useMemo(() => generateEquipmentStatusStats(), []);
 
-  const pumpEquipment = useMemo(() => 
-    equipment.filter(e => e.type === 'pump' && e.unitId === currentUnitId),
+  const unitEquipment = useMemo(() => 
+    equipment.filter(e => e.unitId === currentUnitId),
     [equipment, currentUnitId]
+  );
+
+  const pumpEquipment = useMemo(() => 
+    unitEquipment.filter(e => e.type === 'pump'),
+    [unitEquipment]
   );
 
   const runningHoursTrend = useMemo(() => {
@@ -74,6 +88,34 @@ export default function EquipmentPage() {
     const abnormal = displayTask.items.filter(i => i.result === 'warning' || i.result === 'fault').length;
     return { total, completed, abnormal, rate: total > 0 ? Math.round((completed / total) * 100) : 0 };
   }, [displayTask]);
+
+  const groupedTaskItems = useMemo(() => {
+    if (!displayTask) return {};
+    const groups: Record<string, InspectionTaskItem[]> = {};
+    displayTask.items.forEach(item => {
+      const type = item.equipmentType || 'other';
+      if (!groups[type]) {
+        groups[type] = [];
+      }
+      groups[type].push(item);
+    });
+    return groups;
+  }, [displayTask]);
+
+  const getLatestInspection = (equipmentId: string) => {
+    const equipInspections = inspections.filter(i => i.equipmentId === equipmentId);
+    if (equipInspections.length === 0) return null;
+    return equipInspections.sort((a, b) => 
+      new Date(b.inspectionTime).getTime() - new Date(a.inspectionTime).getTime()
+    )[0];
+  };
+
+  const toggleTypeExpand = (type: string) => {
+    setExpandedTypes(prev => ({
+      ...prev,
+      [type]: !prev[type]
+    }));
+  };
 
   const handleCreateTask = (shift: 'morning' | 'afternoon' | 'night') => {
     const today = new Date().toISOString().split('T')[0];
@@ -207,6 +249,13 @@ export default function EquipmentPage() {
       ),
     },
     {
+      title: '类型',
+      dataIndex: 'type',
+      key: 'type',
+      width: 100,
+      render: (type: string) => EQUIPMENT_TYPE_MAP[type] || type,
+    },
+    {
       title: '规格型号',
       dataIndex: 'specification',
       key: 'specification',
@@ -215,6 +264,7 @@ export default function EquipmentPage() {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
+      width: 100,
       render: (status: string) => {
         const color = status === 'running' ? 'green' : status === 'standby' ? 'blue' : 'red';
         return <Tag color={color}>{getEquipmentStatusText(status)}</Tag>;
@@ -224,17 +274,39 @@ export default function EquipmentPage() {
       title: '运行时间',
       dataIndex: 'runningHours',
       key: 'runningHours',
+      width: 120,
       render: (hours: number) => <span className="font-mono">{hours} h</span>,
+    },
+    {
+      title: '最近巡检',
+      key: 'lastInspection',
+      width: 200,
+      render: (_: any, record: any) => {
+        const last = getLatestInspection(record.id);
+        if (!last) return <span className="text-industrial-subtext">-</span>;
+        return (
+          <div className="text-xs">
+            <div>{formatDate(last.inspectionTime)}</div>
+            <div className="flex items-center gap-1 mt-1">
+              <Tag color={getStatusColor(last.status)} style={{ margin: 0 }}>
+                {last.status === 'normal' ? '正常' : last.status === 'warning' ? '异常' : '故障'}
+              </Tag>
+            </div>
+          </div>
+        );
+      },
     },
     {
       title: '上次维护',
       dataIndex: 'lastMaintenance',
       key: 'lastMaintenance',
+      width: 110,
     },
     {
       title: '下次维护',
       dataIndex: 'nextMaintenance',
       key: 'nextMaintenance',
+      width: 110,
     },
   ];
 
@@ -243,6 +315,7 @@ export default function EquipmentPage() {
       title: '点检时间',
       dataIndex: 'inspectionTime',
       key: 'inspectionTime',
+      width: 160,
       render: (time: string) => formatDate(time),
     },
     {
@@ -257,35 +330,41 @@ export default function EquipmentPage() {
       title: '点检员',
       dataIndex: 'inspector',
       key: 'inspector',
+      width: 100,
     },
     {
       title: '振动 (mm/s)',
       dataIndex: 'vibration',
       key: 'vibration',
+      width: 100,
       render: (val?: number) => val?.toFixed(2) || '-',
     },
     {
       title: '温度 (°C)',
       dataIndex: 'temperature',
       key: 'temperature',
+      width: 90,
       render: (val?: number) => val?.toFixed(1) || '-',
     },
     {
       title: '压力 (MPa)',
       dataIndex: 'pressure',
       key: 'pressure',
+      width: 100,
       render: (val?: number) => val?.toFixed(2) || '-',
     },
     {
       title: '电流 (A)',
       dataIndex: 'current',
       key: 'current',
+      width: 90,
       render: (val?: number) => val?.toFixed(1) || '-',
     },
     {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
+      width: 80,
       render: (status: string) => {
         const color = getStatusColor(status as 'normal' | 'warning' | 'fault');
         const text = status === 'normal' ? '正常' : status === 'warning' ? '警告' : '故障';
@@ -305,17 +384,20 @@ export default function EquipmentPage() {
       title: '班次',
       dataIndex: 'shift',
       key: 'shift',
+      width: 180,
       render: (shift: string) => getShiftText(shift as any),
     },
     {
       title: '日期',
       dataIndex: 'shiftDate',
       key: 'shiftDate',
+      width: 120,
     },
     {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
+      width: 100,
       render: (status: string) => {
         const colorMap: Record<string, string> = {
           pending: 'default',
@@ -333,6 +415,7 @@ export default function EquipmentPage() {
     {
       title: '进度',
       key: 'progress',
+      width: 180,
       render: (_: any, record: InspectionTask) => {
         const completed = record.items.filter(i => i.status === 'completed').length;
         const total = record.items.length;
@@ -351,6 +434,7 @@ export default function EquipmentPage() {
     {
       title: '异常设备',
       key: 'abnormal',
+      width: 100,
       render: (_: any, record: InspectionTask) => {
         const abnormal = record.items.filter(i => i.result === 'warning' || i.result === 'fault').length;
         return abnormal > 0 ? <span className="text-orange-400 font-semibold">{abnormal} 台</span> : '-';
@@ -360,11 +444,13 @@ export default function EquipmentPage() {
       title: '点检员',
       dataIndex: 'inspector',
       key: 'inspector',
+      width: 100,
       render: (val?: string) => val || '-',
     },
     {
       title: '操作',
       key: 'action',
+      width: 80,
       render: (_: any, record: InspectionTask) => (
         <Button
           type="link"
@@ -376,6 +462,187 @@ export default function EquipmentPage() {
       ),
     },
   ];
+
+  const renderTaskDetail = () => {
+    if (!displayTask) return null;
+    
+    const types = Object.keys(groupedTaskItems);
+    
+    return (
+      <div className="space-y-4 pt-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div>
+              <h3 className="text-lg font-medium text-white">
+                {getShiftText(displayTask.shift)}巡检任务
+              </h3>
+              <p className="text-sm text-industrial-subtext">
+                {displayTask.shiftDate} · {taskStats?.completed} / {taskStats?.total} 台已完成
+              </p>
+            </div>
+          </div>
+          <Space>
+            <Button onClick={() => setCurrentInspectionTask(null)}>
+              返回
+            </Button>
+            {displayTask.status !== 'completed' && (
+              <Button type="primary" danger icon={<Square size={14} />} onClick={handleCompleteTask}>
+                结束任务
+              </Button>
+            )}
+          </Space>
+        </div>
+
+        {taskStats && (
+          <Row gutter={[16, 16]}>
+            <Col xs={24} sm={8}>
+              <div className="industrial-card text-center">
+                <Statistic 
+                  title="完成率"
+                  value={taskStats.rate}
+                  suffix="%"
+                  className="text-white"
+                />
+                <Progress 
+                  percent={taskStats.rate}
+                  status={taskStats.rate === 100 ? 'success' : 'active'}
+                  strokeColor="#165DFF"
+                  showInfo={false}
+                  className="mt-2"
+                />
+              </div>
+            </Col>
+            <Col xs={24} sm={8}>
+              <div className="industrial-card text-center">
+                <Statistic 
+                  title="已完成"
+                  value={taskStats.completed}
+                  suffix="台"
+                  valueStyle={{ color: '#00B42A' }}
+                />
+              </div>
+            </Col>
+            <Col xs={24} sm={8}>
+              <div className="industrial-card text-center">
+                <Statistic 
+                  title="异常设备"
+                  value={taskStats.abnormal}
+                  suffix="台"
+                  valueStyle={{ color: taskStats.abnormal > 0 ? '#FF7D00' : '#00B42A' }}
+                />
+              </div>
+            </Col>
+          </Row>
+        )}
+
+        {taskStats && taskStats.abnormal > 0 && (
+          <Alert
+            type="warning"
+            showIcon
+            message={`发现 ${taskStats.abnormal} 台设备点检异常，请关注`}
+            description={
+              <ul className="mt-2 space-y-1">
+                {displayTask.items
+                  .filter(i => i.result === 'warning' || i.result === 'fault')
+                  .map(item => (
+                    <li key={item.id} className="flex items-center justify-between">
+                      <span>{item.equipmentName}</span>
+                      <Tag color={item.result === 'fault' ? 'red' : 'orange'}>
+                        {item.result === 'fault' ? '故障' : '异常'}
+                      </Tag>
+                    </li>
+                  ))}
+              </ul>
+            }
+          />
+        )}
+
+        {types.map(type => {
+          const isExpanded = expandedTypes[type] !== false;
+          const items = groupedTaskItems[type];
+          const typeCompleted = items.filter(i => i.status === 'completed').length;
+          
+          return (
+            <Card 
+              key={type}
+              title={
+                <div 
+                  className="flex items-center justify-between cursor-pointer -mx-4 -my-2 px-4 py-2"
+                  onClick={() => toggleTypeExpand(type)}
+                >
+                  <div className="flex items-center gap-2">
+                    {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    <span className="font-medium">{EQUIPMENT_TYPE_MAP[type] || type}</span>
+                    <Tag color="default">{typeCompleted}/{items.length}</Tag>
+                  </div>
+                </div>
+              }
+              className="bg-industrial-card border-industrial-border"
+              styles={{ header: { borderBottom: '1px solid #1E2A45' }, body: { padding: '16px' } }}
+              size="small"
+            >
+              {isExpanded && (
+                <List
+                  dataSource={items}
+                  renderItem={(item) => (
+                    <List.Item
+                      key={item.id}
+                      className={cn(
+                        'bg-industrial-border/30 rounded-lg mb-3 p-4',
+                        item.status === 'completed' && 'opacity-70'
+                      )}
+                    >
+                      <div className="flex items-center gap-4 w-full">
+                        {getItemStatusIcon(item.status)}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-white">{item.equipmentName}</span>
+                            {getResultTag(item.result)}
+                            {item.status === 'completed' && (
+                              <span className="text-xs text-industrial-subtext">
+                                {item.completedTime}
+                              </span>
+                            )}
+                          </div>
+                          {item.status === 'completed' && (
+                            <div className="flex gap-4 mt-2 text-xs text-industrial-subtext">
+                              <span>振动: {item.vibration?.toFixed(2)} mm/s</span>
+                              <span>温度: {item.temperature?.toFixed(1)} °C</span>
+                              <span>压力: {item.pressure?.toFixed(2)} MPa</span>
+                              <span>电流: {item.current?.toFixed(1)} A</span>
+                              {item.remark && <span>备注: {item.remark}</span>}
+                            </div>
+                          )}
+                        </div>
+                        {item.status === 'pending' && displayTask.status !== 'completed' && (
+                          <Button
+                            type="primary"
+                            icon={<Play size={14} />}
+                            onClick={() => handleStartInspect(item)}
+                          >
+                            开始点检
+                          </Button>
+                        )}
+                        {item.status === 'in-progress' && (
+                          <Button
+                            type="primary"
+                            icon={<Edit size={14} />}
+                            onClick={() => handleStartInspect(item)}
+                          >
+                            继续点检
+                          </Button>
+                        )}
+                      </div>
+                    </List.Item>
+                  )}
+                />
+              )}
+            </Card>
+          );
+        })}
+      </div>
+    );
+  };
 
   const inspectionTaskContent = !displayTask ? (
     <div className="space-y-4 pt-4">
@@ -398,6 +665,9 @@ export default function EquipmentPage() {
               夜班
             </Button>
           </div>
+          <p className="text-xs text-industrial-subtext mt-4">
+            覆盖机泵、压缩机、辅助设备等全部关键设备
+          </p>
         </div>
       </Card>
 
@@ -433,157 +703,7 @@ export default function EquipmentPage() {
         </Card>
       )}
     </div>
-  ) : (
-    <div className="space-y-4 pt-4">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <div>
-            <h3 className="text-lg font-medium text-white">
-              {getShiftText(displayTask.shift)}巡检任务
-            </h3>
-            <p className="text-sm text-industrial-subtext">
-              {displayTask.shiftDate} · {taskStats?.completed} / {taskStats?.total} 台已完成
-            </p>
-          </div>
-        </div>
-        <Space>
-          <Button onClick={() => setCurrentInspectionTask(null)}>
-            返回
-          </Button>
-          {displayTask.status !== 'completed' && (
-            <Button type="primary" danger icon={<Square size={14} />} onClick={handleCompleteTask}>
-              结束任务
-            </Button>
-          )}
-        </Space>
-      </div>
-
-      {taskStats && (
-        <Row gutter={[16, 16]}>
-          <Col xs={24} sm={8}>
-            <div className="industrial-card text-center">
-              <Statistic 
-                title="完成率"
-                value={taskStats.rate}
-                suffix="%"
-                className="text-white"
-              />
-              <Progress 
-                percent={taskStats.rate}
-                status={taskStats.rate === 100 ? 'success' : 'active'}
-                strokeColor="#165DFF"
-                showInfo={false}
-                className="mt-2"
-              />
-            </div>
-          </Col>
-          <Col xs={24} sm={8}>
-            <div className="industrial-card text-center">
-              <Statistic 
-                title="已完成"
-                value={taskStats.completed}
-                suffix="台"
-                valueStyle={{ color: '#00B42A' }}
-              />
-            </div>
-          </Col>
-          <Col xs={24} sm={8}>
-            <div className="industrial-card text-center">
-              <Statistic 
-                title="异常设备"
-                value={taskStats.abnormal}
-                suffix="台"
-                valueStyle={{ color: taskStats.abnormal > 0 ? '#FF7D00' : '#00B42A' }}
-              />
-            </div>
-          </Col>
-        </Row>
-      )}
-
-      {taskStats && taskStats.abnormal > 0 && (
-        <Alert
-          type="warning"
-          showIcon
-          message={`发现 ${taskStats.abnormal} 台设备点检异常，请关注`}
-          description={
-            <ul className="mt-2 space-y-1">
-              {displayTask.items
-                .filter(i => i.result === 'warning' || i.result === 'fault')
-                .map(item => (
-                  <li key={item.id} className="flex items-center justify-between">
-                    <span>{item.equipmentName}</span>
-                    <Tag color={item.result === 'fault' ? 'red' : 'orange'}>
-                      {item.result === 'fault' ? '故障' : '异常'}
-                    </Tag>
-                  </li>
-                ))}
-            </ul>
-          }
-        />
-      )}
-
-      <Card 
-        title="待点检设备清单" 
-        className="bg-industrial-card border-industrial-border"
-        styles={{ header: { borderBottom: '1px solid #1E2A45' }, body: { padding: '16px' } }}
-      >
-        <List
-          dataSource={displayTask.items}
-          renderItem={(item) => (
-            <List.Item
-              key={item.id}
-              className={cn(
-                'bg-industrial-border/30 rounded-lg mb-3 p-4',
-                item.status === 'completed' && 'opacity-70'
-              )}
-            >
-              <div className="flex items-center gap-4 w-full">
-                {getItemStatusIcon(item.status)}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-white">{item.equipmentName}</span>
-                    {getResultTag(item.result)}
-                    {item.status === 'completed' && (
-                      <span className="text-xs text-industrial-subtext">
-                        {item.completedTime}
-                      </span>
-                    )}
-                  </div>
-                  {item.status === 'completed' && (
-                    <div className="flex gap-4 mt-2 text-xs text-industrial-subtext">
-                      <span>振动: {item.vibration?.toFixed(2)} mm/s</span>
-                      <span>温度: {item.temperature?.toFixed(1)} °C</span>
-                      <span>压力: {item.pressure?.toFixed(2)} MPa</span>
-                      <span>电流: {item.current?.toFixed(1)} A</span>
-                      {item.remark && <span>备注: {item.remark}</span>}
-                    </div>
-                  )}
-                </div>
-                {item.status === 'pending' && displayTask.status !== 'completed' && (
-                  <Button
-                    type="primary"
-                    icon={<Play size={14} />}
-                    onClick={() => handleStartInspect(item)}
-                  >
-                    开始点检
-                  </Button>
-                )}
-                {item.status === 'in-progress' && (
-                  <Button
-                    type="primary"
-                    icon={<Edit size={14} />}
-                    onClick={() => handleStartInspect(item)}
-                  >
-                    继续点检
-                  </Button>
-                )}
-              </div>
-            </List.Item>
-          )}
-        />
-      </Card>
-    </div>
-  );
+  ) : renderTaskDetail();
 
   const equipmentLedgerContent = (
     <div className="space-y-4 pt-4">
@@ -618,13 +738,13 @@ export default function EquipmentPage() {
       </Row>
 
       <Card 
-        title="机泵设备" 
+        title="设备概览" 
         className="bg-industrial-card border-industrial-border"
         styles={{ header: { borderBottom: '1px solid #1E2A45' }, body: { padding: '16px' } }}
       >
         <Row gutter={[16, 16]}>
           {pumpEquipment.slice(0, 4).map(pump => {
-            const last = inspections.find(i => i.equipmentId === pump.id);
+            const last = getLatestInspection(pump.id);
             return (
               <Col xs={24} lg={6} key={pump.id}>
                 <div className="industrial-card h-full">
@@ -637,6 +757,17 @@ export default function EquipmentPage() {
                       {getEquipmentStatusText(pump.status)}
                     </Tag>
                   </div>
+                  {last && (
+                    <div className="text-xs text-industrial-subtext mb-3">
+                      最近巡检: {formatDate(last.inspectionTime)}
+                      <Tag 
+                        color={getStatusColor(last.status)} 
+                        style={{ marginLeft: 8, marginBottom: 0 }}
+                      >
+                        {last.status === 'normal' ? '正常' : last.status === 'warning' ? '异常' : '故障'}
+                      </Tag>
+                    </div>
+                  )}
                   <Row gutter={[8, 8]}>
                     <Col span={12}>
                       <GaugeChart
@@ -700,7 +831,7 @@ export default function EquipmentPage() {
         styles={{ header: { borderBottom: '1px solid #1E2A45' }, body: { padding: '16px' } }}
       >
         <Table
-          dataSource={equipment.filter(e => e.unitId === currentUnitId)}
+          dataSource={unitEquipment}
           columns={pumpColumns}
           rowKey="id"
           pagination={{ pageSize: 10 }}
@@ -781,7 +912,7 @@ export default function EquipmentPage() {
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/20 text-green-400 text-sm">
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            {equipment.filter(e => e.status === 'running' && e.unitId === currentUnitId).length} 台运行中
+            {unitEquipment.filter(e => e.status === 'running').length} 台运行中
           </span>
         </div>
       </div>

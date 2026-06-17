@@ -101,14 +101,52 @@ export default function LineChart({
       tooltip: {
         formatter: (params: any) => {
           const point = alarmPoints.find(ap => ap.time === params.value[0]);
-          return `<div>
-            <div class="text-xs text-industrial-subtext">${params.value[0]}</div>
-            <div class="flex items-center gap-2">
-              <span style="background:${params.color}" class="w-2 h-2 rounded-full"></span>
-              <span>${point?.level === 'alarm' ? '报警' : '警告'}:</span>
-              <span class="font-mono font-semibold">${params.value[1]} ${unit}</span>
+          if (!point) return '';
+          
+          const levelText = point.level === 'alarm' ? '报警' : '警告';
+          const statusMap: Record<string, string> = {
+            active: '活动',
+            acknowledged: '已确认',
+            cleared: '已消除',
+          };
+          const statusColorMap: Record<string, string> = {
+            active: '#F53F3F',
+            acknowledged: '#FF7D00',
+            cleared: '#00B42A',
+          };
+          const statusText = point.status ? statusMap[point.status] : '';
+          const statusColor = point.status ? statusColorMap[point.status] : '';
+          
+          let html = `<div style="min-width:200px">
+            <div style="color:#8A94A6;font-size:12px;margin-bottom:6px">${point.time}</div>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+              <span style="background:${params.color};width:8px;height:8px;border-radius:50%;display:inline-block"></span>
+              <span style="font-weight:500">${levelText}: ${point.value} ${unit}</span>
             </div>
-          </div>`;
+            <div style="color:#8A94A6;font-size:12px;margin-bottom:2px">
+              限值: <span style="font-family:monospace;color:#F53F3F">${point.limitValue}</span>
+            </div>`;
+          
+          if (point.status) {
+            html += `<div style="color:#8A94A6;font-size:12px;margin-bottom:2px">
+              状态: <span style="color:${statusColor}">${statusText}</span>
+            </div>`;
+          }
+          
+          if (point.operator) {
+            html += `<div style="color:#8A94A6;font-size:12px;margin-bottom:2px">
+              处理人: ${point.operator}
+            </div>`;
+          }
+          
+          if (point.handleRemark) {
+            html += `<div style="color:#8A94A6;font-size:12px;margin-top:6px;padding-top:6px;border-top:1px solid #1E2A45">
+              处理意见: <span style="color:#E6E8EF">${point.handleRemark}</span>
+            </div>`;
+          }
+          
+          html += '</div>';
+          return html;
         },
       },
     });
