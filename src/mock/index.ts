@@ -2,6 +2,7 @@ import dayjs from 'dayjs';
 import type {
   Unit,
   ShutdownPlan,
+  ShutdownPlanStep,
   Catalyst,
   CatalystLoss,
   ReactorParam,
@@ -44,11 +45,11 @@ export const mockShutdownPlans: ShutdownPlan[] = [
     createTime: '2026-06-15 09:00:00',
     creator: '张工程师',
     steps: [
-      { id: 's1', name: '降量准备', description: '逐步降低处理量至70%', status: 'pending' },
-      { id: 's2', name: '切断进料', description: '停止原料油进料', status: 'pending' },
-      { id: 's3', name: '催化剂循环', description: '保持催化剂循环降温', status: 'pending' },
-      { id: 's4', name: '汽提吹扫', description: '蒸汽吹扫设备及管线', status: 'pending' },
-      { id: 's5', name: '停工验收', description: '检查确认停工完成', status: 'pending' },
+      { id: 's1', name: '降量准备', description: '逐步降低处理量至70%', status: 'pending', order: 1 },
+      { id: 's2', name: '切断进料', description: '停止原料油进料', status: 'pending', order: 2 },
+      { id: 's3', name: '催化剂循环', description: '保持催化剂循环降温', status: 'pending', order: 3 },
+      { id: 's4', name: '汽提吹扫', description: '蒸汽吹扫设备及管线', status: 'pending', order: 4 },
+      { id: 's5', name: '停工验收', description: '检查确认停工完成', status: 'pending', order: 5 },
     ],
   },
   {
@@ -62,12 +63,12 @@ export const mockShutdownPlans: ShutdownPlan[] = [
     creator: '李工程师',
     approver: '王主任',
     steps: [
-      { id: 's1', name: '系统气密', description: '进行系统气密性试验', status: 'completed', startTime: '2026-06-25 08:00:00', endTime: '2026-06-25 10:30:00', operator: '赵操作员' },
-      { id: 's2', name: '建立催化剂循环', description: '启动催化剂循环系统', status: 'completed', startTime: '2026-06-25 10:30:00', endTime: '2026-06-25 14:00:00', operator: '赵操作员' },
-      { id: 's3', name: '反应器升温', description: '反应器升温至400°C', status: 'in-progress', startTime: '2026-06-25 14:00:00', operator: '赵操作员' },
-      { id: 's4', name: '进料准备', description: '检查进料系统准备就绪', status: 'pending' },
-      { id: 's5', name: '引入进料', description: '逐步引入原料油', status: 'pending' },
-      { id: 's6', name: '调整操作', description: '调整至正常操作参数', status: 'pending' },
+      { id: 's1', name: '系统气密', description: '进行系统气密性试验', status: 'completed', startTime: '2026-06-25 08:00:00', endTime: '2026-06-25 10:30:00', operator: '赵操作员', order: 1 },
+      { id: 's2', name: '建立催化剂循环', description: '启动催化剂循环系统', status: 'completed', startTime: '2026-06-25 10:30:00', endTime: '2026-06-25 14:00:00', operator: '赵操作员', order: 2 },
+      { id: 's3', name: '反应器升温', description: '反应器升温至400°C', status: 'in-progress', startTime: '2026-06-25 14:00:00', operator: '赵操作员', order: 3 },
+      { id: 's4', name: '进料准备', description: '检查进料系统准备就绪', status: 'pending', order: 4 },
+      { id: 's5', name: '引入进料', description: '逐步引入原料油', status: 'pending', order: 5 },
+      { id: 's6', name: '调整操作', description: '调整至正常操作参数', status: 'pending', order: 6 },
     ],
   },
   {
@@ -82,11 +83,11 @@ export const mockShutdownPlans: ShutdownPlan[] = [
     creator: '张工程师',
     approver: '王主任',
     steps: [
-      { id: 's1', name: '系统气密', description: '进行系统气密性试验', status: 'completed', startTime: '2026-06-10 08:00:00', endTime: '2026-06-10 11:00:00', operator: '刘操作员' },
-      { id: 's2', name: '建立催化剂循环', description: '启动催化剂循环系统', status: 'completed', startTime: '2026-06-10 11:00:00', endTime: '2026-06-10 15:00:00', operator: '刘操作员' },
-      { id: 's3', name: '反应器升温', description: '反应器升温至400°C', status: 'completed', startTime: '2026-06-10 15:00:00', endTime: '2026-06-11 08:00:00', operator: '刘操作员' },
-      { id: 's4', name: '引入进料', description: '逐步引入原料油', status: 'completed', startTime: '2026-06-11 08:00:00', endTime: '2026-06-11 16:00:00', operator: '刘操作员' },
-      { id: 's5', name: '调整操作', description: '调整至正常操作参数', status: 'completed', startTime: '2026-06-11 16:00:00', endTime: '2026-06-12 18:00:00', operator: '刘操作员' },
+      { id: 's1', name: '系统气密', description: '进行系统气密性试验', status: 'completed', startTime: '2026-06-10 08:00:00', endTime: '2026-06-10 11:00:00', operator: '刘操作员', order: 1 },
+      { id: 's2', name: '建立催化剂循环', description: '启动催化剂循环系统', status: 'completed', startTime: '2026-06-10 11:00:00', endTime: '2026-06-10 15:00:00', operator: '刘操作员', order: 2 },
+      { id: 's3', name: '反应器升温', description: '反应器升温至400°C', status: 'completed', startTime: '2026-06-10 15:00:00', endTime: '2026-06-11 08:00:00', operator: '刘操作员', order: 3 },
+      { id: 's4', name: '引入进料', description: '逐步引入原料油', status: 'completed', startTime: '2026-06-11 08:00:00', endTime: '2026-06-11 16:00:00', operator: '刘操作员', order: 4 },
+      { id: 's5', name: '调整操作', description: '调整至正常操作参数', status: 'completed', startTime: '2026-06-11 16:00:00', endTime: '2026-06-12 18:00:00', operator: '刘操作员', order: 5 },
     ],
   },
 ];
@@ -318,4 +319,44 @@ export const generateProductDistribution = () => {
     { name: '干气', value: 4.5 },
     { name: '焦炭', value: 2.7 },
   ];
+};
+
+export const getStartupTemplateSteps = (): Omit<ShutdownPlanStep, 'id'>[] => [
+  { name: '系统检查', description: '检查所有设备、仪表、阀门状态', status: 'pending', order: 1 },
+  { name: '系统气密试验', description: '进行系统气密性试验，确认无泄漏', status: 'pending', order: 2 },
+  { name: '建立催化剂循环', description: '启动催化剂循环系统，建立正常循环', status: 'pending', order: 3 },
+  { name: '反应器升温', description: '反应器升温至400°C，恒温脱水', status: 'pending', order: 4 },
+  { name: '再生器升温', description: '再生器升温至650°C，准备烧焦', status: 'pending', order: 5 },
+  { name: '进料准备', description: '检查进料系统，确认原料罐、管线畅通', status: 'pending', order: 6 },
+  { name: '引入原料油', description: '逐步引入原料油，控制进料量', status: 'pending', order: 7 },
+  { name: '调整反应深度', description: '调整反应温度、压力、催化剂循环量', status: 'pending', order: 8 },
+  { name: '建立分馏塔循环', description: '建立分馏塔各回流，调整温度分布', status: 'pending', order: 9 },
+  { name: '启动吸收稳定系统', description: '启动吸收塔、稳定塔，建立正常操作', status: 'pending', order: 10 },
+  { name: '调整产品质量', description: '调整操作参数，确保产品质量合格', status: 'pending', order: 11 },
+  { name: '投入能量回收系统', description: '启动烟气轮机、余热锅炉，回收能量', status: 'pending', order: 12 },
+  { name: '全面检查', description: '全面检查各系统运行状态，确认正常', status: 'pending', order: 13 },
+];
+
+export const getShutdownTemplateSteps = (): Omit<ShutdownPlanStep, 'id'>[] => [
+  { name: '降量准备', description: '逐步降低处理量至70%，调整操作参数', status: 'pending', order: 1 },
+  { name: '切断进料', description: '停止原料油进料，关闭进料阀门', status: 'pending', order: 2 },
+  { name: '催化剂循环降温', description: '保持催化剂循环，逐步降低温度', status: 'pending', order: 3 },
+  { name: '停止能量回收', description: '停运烟气轮机、余热锅炉', status: 'pending', order: 4 },
+  { name: '切断吸收稳定', description: '停止吸收稳定系统操作', status: 'pending', order: 5 },
+  { name: '分馏塔退油', description: '分馏塔各产品转次品，退净存油', status: 'pending', order: 6 },
+  { name: '蒸汽吹扫', description: '对设备及管线进行蒸汽吹扫', status: 'pending', order: 7 },
+  { name: '催化剂卸料', description: '将催化剂卸至催化剂储罐', status: 'pending', order: 8 },
+  { name: '氮气置换', description: '系统氮气置换，分析可燃气体含量', status: 'pending', order: 9 },
+  { name: '通风降温', description: '自然通风或强制通风，降温至常温', status: 'pending', order: 10 },
+  { name: '开人孔', description: '打开设备人孔，准备进入检查', status: 'pending', order: 11 },
+  { name: '停工验收', description: '检查确认停工完成，办理停工验收手续', status: 'pending', order: 12 },
+];
+
+export const getShiftText = (shift: 'morning' | 'afternoon' | 'night') => {
+  const map = {
+    morning: '白班 (08:00-16:00)',
+    afternoon: '中班 (16:00-24:00)',
+    night: '夜班 (00:00-08:00)',
+  };
+  return map[shift];
 };

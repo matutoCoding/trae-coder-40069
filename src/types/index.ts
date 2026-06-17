@@ -13,6 +13,7 @@ export interface ShutdownPlanStep {
   startTime?: string;
   endTime?: string;
   operator?: string;
+  order: number;
 }
 
 export interface ShutdownPlan {
@@ -27,6 +28,7 @@ export interface ShutdownPlan {
   createTime: string;
   creator: string;
   approver?: string;
+  description?: string;
 }
 
 export interface Catalyst {
@@ -154,6 +156,8 @@ export interface Alarm {
   status: 'active' | 'acknowledged' | 'cleared';
   operator?: string;
   acknowledgeTime?: string;
+  handleRemark?: string;
+  clearTime?: string;
 }
 
 export interface TrendDataPoint {
@@ -166,4 +170,39 @@ export interface User {
   name: string;
   role: 'admin' | 'engineer' | 'operator' | 'maintenance';
   avatar?: string;
+}
+
+export interface InspectionTaskItem {
+  id: string;
+  equipmentId: string;
+  equipmentName: string;
+  status: 'pending' | 'in-progress' | 'completed' | 'skipped';
+  inspectionId?: string;
+  vibration?: number;
+  temperature?: number;
+  pressure?: number;
+  current?: number;
+  remark?: string;
+  result?: 'normal' | 'warning' | 'fault';
+  completedTime?: string;
+}
+
+export interface InspectionTask {
+  id: string;
+  unitId: string;
+  shift: 'morning' | 'afternoon' | 'night';
+  shiftDate: string;
+  status: 'pending' | 'in-progress' | 'completed';
+  items: InspectionTaskItem[];
+  inspector?: string;
+  startTime?: string;
+  endTime?: string;
+  createTime: string;
+}
+
+export interface AlarmPoint {
+  time: string;
+  value: number;
+  type: 'upper' | 'lower';
+  level: 'warning' | 'alarm';
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Card, Row, Col, Table, Tag, Tabs, Select, Input, Space, Button } from 'antd';
-import { Activity, AlertTriangle, Bell, TrendingUp, RefreshCw, Search } from 'lucide-react';
+import { Card, Row, Col, Table, Tag, Tabs, Select, Input, Space, Button, DatePicker, Form } from 'antd';
+import { Activity, AlertTriangle, Bell, TrendingUp, RefreshCw, Search, Filter } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { generateTrendData } from '@/mock';
 import { formatDate, getStatusColor } from '@/utils';
@@ -8,7 +8,8 @@ import LineChart from '@/components/Charts/LineChart';
 import GaugeChart from '@/components/Charts/GaugeChart';
 import ParamCard from '@/components/Common/ParamCard';
 import AlarmItem from '@/components/Common/AlarmItem';
-import type { Parameter } from '@/types';
+import type { Parameter, AlarmPoint } from '@/types';
+import dayjs from 'dayjs';
 
 const { Option } = Select;
 
@@ -17,6 +18,10 @@ export default function Monitoring() {
   const [selectedParam, setSelectedParam] = useState<string>('p1');
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [historyFilterForm] = Form.useForm();
+  const [historyLevelFilter, setHistoryLevelFilter] = useState<string>('all');
+  const [historyParamFilter, setHistoryParamFilter] = useState<string>('all');
+  const [historyDateRange, setHistoryDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null] | null>(null);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -32,6 +37,16 @@ export default function Monitoring() {
     [parameters, selectedParam]
   );
 
+  const alarmPoints = useMemo((): AlarmPoint[] => {
+    const paramAlarms = alarms.filter(a => a.parameterId === selectedParam);
+    return paramAlarms.map(alarm => ({
+      time: alarm.alarmTime,
+      value: alarm.actualValue,
+      type: alarm.actualValue > alarm.limitValue ? 'upper' : 'lower',
+      level: alarm.level,
+    }));
+  }, [alarms, selectedParam]);
+
   const filteredParameters = useMemo(() => {
     return parameters.filter(p => {
       const matchSearch = p.name.toLowerCase().includes(searchText.toLowerCase()) ||
@@ -45,6 +60,21 @@ export default function Monitoring() {
     alarms.filter(a => a.status === 'active' || a.status === 'acknowledged'),
     [alarms]
   );
+
+  const filteredHistoryAlarms = useMemo(() => {
+    return alarms.filter(alarm => {
+      const matchLevel = historyLevelFilter === 'all' || alarm.level === historyLevelFilter;
+      const matchParam = historyParamFilter === 'all' || alarm.parameterId === historyParamFilter;
+      
+      let matchDate = true;
+      if (historyDateRange && historyDateRange[0] && historyDateRange[1]) {
+        const alarmDate = dayjs(alarm.alarmTime);
+        matchDate = alarmDate.isAfter(historyDateRange[0]) && alarmDate.isBefore(historyDateRange[1]);
+      }
+      
+      return matchLevel && matchParam && matchDate;
+    });
+  }, [alarms, historyLevelFilter, historyParamFilter, historyDateRange]);
 
   const alarmStats = useMemo(() => ({
     total: alarms.length,
@@ -226,6 +256,7 @@ export default function Monitoring() {
                   height={350}
                   upperLimit={selectedParameter?.upperLimit}
                   lowerLimit={selectedParameter?.lowerLimit}
+                  alarmPoints={alarmPoints}
                 />
               </Col>
               <Col xs={24} lg={8}>
@@ -384,9 +415,51 @@ export default function Monitoring() {
             title="历史报警记录" 
             className="bg-industrial-card border-industrial-border"
             styles={{ header: { borderBottom: '1px solid #1E2A45' }, body: { padding: '16px' } }}
+            extra={
+              <Space>
+                <DatePicker.RangePicker
+                  value={historyDateRange}
+                  onChange={(dates) => setHistoryDateRange(dates as any)}
+                  placeholder={['开始时间', '结束时间']}
+                  size="small"
+                />
+                <Select
+                  value={historyLevelFilter}
+                  onChange={setHistoryLevelFilter}
+                  style={{ width: 100 }}
+                  size="small"
+                >
+                  <Option value="all">全部级别</Option>
+                  <Option value="warning">警告</Option>
+                  <Option value="alarm">报警</Option>
+                </Select>
+                <Select
+                  value={historyParamFilter}
+                  onChange={setHistoryParamFilter}
+                  style={{ width: 150 }}
+                  size="small"
+                >
+                  <Option value="all">全部参数</Option>
+                  {parameters.map(p => (
+                    <Option key={p.id} value={p.id}>{p.name}</Option>
+                  ))}
+                </Select>
+                <Button 
+                  size="small" 
+                  icon={<Filter size={14} />}
+                  onClick={() => {
+                    setHistoryLevelFilter('all');
+                    setHistoryParamFilter('all');
+                    setHistoryDateRange(null);
+                  }}
+                >
+                  重置
+                </Button>
+              </Space>
+            }
           >
             <Table
-              dataSource={alarms.slice(0, 20)}
+              dataSource={filteredHistoryAlarms}
               rowKey="id"
               pagination={{ pageSize: 10 }}
               className="data-table"

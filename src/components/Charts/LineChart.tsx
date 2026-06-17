@@ -1,5 +1,5 @@
 import ReactECharts from 'echarts-for-react';
-import type { TrendDataPoint } from '@/types';
+import type { TrendDataPoint, AlarmPoint } from '@/types';
 
 interface LineChartProps {
   data: TrendDataPoint[];
@@ -10,6 +10,7 @@ interface LineChartProps {
   showLegend?: boolean;
   upperLimit?: number;
   lowerLimit?: number;
+  alarmPoints?: AlarmPoint[];
 }
 
 export default function LineChart({
@@ -21,6 +22,7 @@ export default function LineChart({
   showLegend = false,
   upperLimit,
   lowerLimit,
+  alarmPoints = [],
 }: LineChartProps) {
   const series: any[] = [
     {
@@ -79,6 +81,36 @@ export default function LineChart({
         color: '#F53F3F',
       },
       data: data.map(d => [d.time, lowerLimit]),
+    });
+  }
+
+  if (alarmPoints.length > 0) {
+    series.push({
+      name: '报警点',
+      type: 'scatter',
+      symbolSize: 12,
+      data: alarmPoints.map(ap => ({
+        value: [ap.time, ap.value],
+        itemStyle: {
+          color: ap.level === 'alarm' ? '#F53F3F' : '#FF7D00',
+          shadowBlur: 10,
+          shadowColor: ap.level === 'alarm' ? '#F53F3F' : '#FF7D00',
+        },
+        symbol: 'pin',
+      })),
+      tooltip: {
+        formatter: (params: any) => {
+          const point = alarmPoints.find(ap => ap.time === params.value[0]);
+          return `<div>
+            <div class="text-xs text-industrial-subtext">${params.value[0]}</div>
+            <div class="flex items-center gap-2">
+              <span style="background:${params.color}" class="w-2 h-2 rounded-full"></span>
+              <span>${point?.level === 'alarm' ? '报警' : '警告'}:</span>
+              <span class="font-mono font-semibold">${params.value[1]} ${unit}</span>
+            </div>
+          </div>`;
+        },
+      },
     });
   }
 
