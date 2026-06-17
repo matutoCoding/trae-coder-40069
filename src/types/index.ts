@@ -29,6 +29,30 @@ export interface ShutdownPlan {
   creator: string;
   approver?: string;
   description?: string;
+  review?: PlanReview;
+}
+
+export interface PlanReview {
+  summary: string;
+  remainingIssues: string;
+  attachments: string;
+  reviewer: string;
+  reviewTime: string;
+}
+
+export interface PendingIssue {
+  id: string;
+  source: 'inspection';
+  sourceId: string;
+  equipmentId: string;
+  equipmentName: string;
+  description: string;
+  status: 'pending' | 'processing' | 'resolved';
+  creator: string;
+  createTime: string;
+  resolver?: string;
+  resolveTime?: string;
+  resolveRemark?: string;
 }
 
 export interface Catalyst {
@@ -158,6 +182,7 @@ export interface Alarm {
   acknowledgeTime?: string;
   handleRemark?: string;
   clearTime?: string;
+  clearRemark?: string;
 }
 
 export interface TrendDataPoint {
@@ -212,4 +237,7 @@ export interface AlarmPoint {
   status?: 'active' | 'acknowledged' | 'cleared';
   operator?: string;
   handleRemark?: string;
+  clearRemark?: string;
+  acknowledgeTime?: string;
+  clearTime?: string;
 }

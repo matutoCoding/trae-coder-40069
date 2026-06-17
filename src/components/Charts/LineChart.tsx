@@ -11,6 +11,7 @@ interface LineChartProps {
   upperLimit?: number;
   lowerLimit?: number;
   alarmPoints?: AlarmPoint[];
+  alarmPointClick?: (point: AlarmPoint) => void;
 }
 
 export default function LineChart({
@@ -23,6 +24,7 @@ export default function LineChart({
   upperLimit,
   lowerLimit,
   alarmPoints = [],
+  alarmPointClick,
 }: LineChartProps) {
   const series: any[] = [
     {
@@ -244,5 +246,12 @@ export default function LineChart({
     series,
   };
 
-  return <ReactECharts option={option} style={{ height }} opts={{ renderer: 'canvas' }} />;
+  return <ReactECharts option={option} style={{ height }} opts={{ renderer: 'canvas' }} onEvents={{
+    click: (params: any) => {
+      if (params.seriesName === '报警点' && alarmPointClick) {
+        const point = alarmPoints.find(ap => ap.time === params.value[0] && ap.value === params.value[1]);
+        if (point) alarmPointClick(point);
+      }
+    }
+  }} />;
 }

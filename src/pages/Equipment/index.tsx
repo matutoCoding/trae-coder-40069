@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { 
-  Card, Table, Tag, Tabs, Modal, Form, Input, InputNumber, Select, Button, Space, List, Progress, Statistic, Alert, Row, Col, message
+import {
+  Card, Table, Tag, Tabs, Modal, Form, Input, InputNumber, Select, Button, Space, List, Progress, Statistic, Alert, Row, Col, message, Badge
 } from 'antd';
-import { 
-  AlertTriangle, CheckCircle, Clock, Wrench, Plus, Thermometer, Activity, Zap, 
-  Play, Square, FileText, Edit, ChevronDown, ChevronUp
+import {
+  AlertTriangle, CheckCircle, Clock, Wrench, Plus, Thermometer, Activity, Zap,
+  Play, Square, FileText, Edit, ChevronDown, ChevronUp, ClipboardList
 } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { generateEquipmentStatusStats, getShiftText } from '@/mock';
 import { formatDate, getStatusColor, cn } from '@/utils';
 import GaugeChart from '@/components/Charts/GaugeChart';
 import BarChart from '@/components/Charts/BarChart';
-import type { InspectionTask, InspectionTaskItem } from '@/types';
+import type { InspectionTask, InspectionTaskItem, PendingIssue } from '@/types';
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -24,24 +24,34 @@ const EQUIPMENT_TYPE_MAP: Record<string, string> = {
   other: '辅助设备',
 };
 
+const SHIFT_CONFIG: Array<{ key: 'morning' | 'afternoon' | 'night'; label: string; color: string }> = [
+  { key: 'morning', label: '白班', color: '#165DFF' },
+  { key: 'afternoon', label: '中班', color: '#0FC6C2' },
+  { key: 'night', label: '夜班', color: '#722ED1' },
+];
+
 export default function EquipmentPage() {
-  const { 
+  const {
     equipment, inspections, inspectionTasks, currentInspectionTask,
-    updateParams, createInspectionTask, updateInspectionTaskItem, 
-    completeInspectionTask, setCurrentInspectionTask, currentUnitId
+    updateParams, createInspectionTask, updateInspectionTaskItem,
+    completeInspectionTask, setCurrentInspectionTask, currentUnitId,
+    pendingIssues, addPendingIssue, resolvePendingIssue
   } = useAppStore();
 
   const [inspectModalVisible, setInspectModalVisible] = useState(false);
   const [currentInspectItem, setCurrentInspectItem] = useState<InspectionTaskItem | null>(null);
   const [inspectForm] = Form.useForm();
   const [expandedTypes, setExpandedTypes] = useState<Record<string, boolean>>({});
-  
-  const currentTaskFromStore = useMemo(() => 
-    currentInspectionTask?.id 
-      ? inspectionTasks.find(t => t.id === currentInspectionTask.id) 
+  const [resolveModalVisible, setResolveModalVisible] = useState(false);
+  const [resolvingIssue, setResolvingIssue] = useState<PendingIssue | null>(null);
+  const [resolveForm] = Form.useForm();
+
+  const currentTaskFromStore = useMemo(() =>
+    currentInspectionTask?.id
+      ? inspectionTasks.find(t => t.id === currentInspectionTask.id)
       : null
   , [currentInspectionTask?.id, inspectionTasks]);
-  
+
   const displayTask = currentTaskFromStore || currentInspectionTask;
 
   useEffect(() => {
@@ -53,12 +63,12 @@ export default function EquipmentPage() {
 
   const equipmentStats = useMemo(() => generateEquipmentStatusStats(), []);
 
-  const unitEquipment = useMemo(() => 
+  const unitEquipment = useMemo(() =>
     equipment.filter(e => e.unitId === currentUnitId),
     [equipment, currentUnitId]
   );
 
-  const pumpEquipment = useMemo(() => 
+  const pumpEquipment = useMemo(() =>
     unitEquipment.filter(e => e.type === 'pump'),
     [unitEquipment]
   );
@@ -71,7 +81,7 @@ export default function EquipmentPage() {
     }));
   }, [pumpEquipment]);
 
-  const unitTasks = useMemo(() => 
+  const unitTasks = useMemo(() =>
     inspectionTasks.filter(t => t.unitId === currentUnitId),
     [inspectionTasks, currentUnitId]
   );
@@ -80,6 +90,20 @@ export default function EquipmentPage() {
     const today = new Date().toISOString().split('T')[0];
     return unitTasks.filter(t => t.shiftDate === today);
   }, [unitTasks]);
+
+  const shiftSummary = useMemo(() => {
+    return SHIFT_CONFIG.map(({ key, label, color }) => {
+      const task = todayTasks.find(t => t.shift === key);
+      if (!task) {
+        return { key, label, color, completed: 0, total: 0, abnormal: 0, rate: 0, exists: false };
+      }
+      const completed = task.items.filter(i => i.status === 'completed').length;
+      const total = task.items.length;
+      const abnormal = task.items.filter(i => i.result === 'warning' || i.result === 'fault').length;
+      const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
+      return { key, label, color, completed, total, abnormal, rate, exists: true };
+    });
+  }, [todayTasks]);
 
   const taskStats = useMemo(() => {
     if (!displayTask) return null;
@@ -102,10 +126,20 @@ export default function EquipmentPage() {
     return groups;
   }, [displayTask]);
 
+  const equipmentIssueCount = useMemo(() => {
+    const map: Record<string, number> = {};
+    pendingIssues.forEach(issue => {
+      if (issue.status !== 'resolved') {
+        map[issue.equipmentId] = (map[issue.equipmentId] || 0) + 1;
+      }
+    });
+    return map;
+  }, [pendingIssues]);
+
   const getLatestInspection = (equipmentId: string) => {
     const equipInspections = inspections.filter(i => i.equipmentId === equipmentId);
     if (equipInspections.length === 0) return null;
-    return equipInspections.sort((a, b) => 
+    return equipInspections.sort((a, b) =>
       new Date(b.inspectionTime).getTime() - new Date(a.inspectionTime).getTime()
     )[0];
   };
@@ -184,6 +218,44 @@ export default function EquipmentPage() {
       completeInspectionTask(displayTask.id);
       message.success('巡检任务已结束');
     }
+  };
+
+  const handleConvertToPending = () => {
+    if (!displayTask) return;
+    const abnormalItems = displayTask.items.filter(i => i.result === 'warning' || i.result === 'fault');
+    if (abnormalItems.length === 0) return;
+    let count = 0;
+    abnormalItems.forEach(item => {
+      addPendingIssue({
+        source: 'inspection',
+        sourceId: displayTask.id,
+        equipmentId: item.equipmentId,
+        equipmentName: item.equipmentName,
+        description: item.result === 'fault' ? '设备故障' : '设备异常',
+        status: 'pending',
+        creator: useAppStore.getState().currentUser.name,
+      });
+      count++;
+    });
+    message.success(`已成功转换 ${count} 条待处理事项`);
+  };
+
+  const handleResolveIssue = (issue: PendingIssue) => {
+    setResolvingIssue(issue);
+    resolveForm.setFieldsValue({ resolver: '', remark: '' });
+    setResolveModalVisible(true);
+  };
+
+  const handleResolveSubmit = () => {
+    resolveForm.validateFields().then((values) => {
+      if (resolvingIssue) {
+        resolvePendingIssue(resolvingIssue.id, values.resolver, values.remark);
+        message.success('待处理事项已处理');
+        setResolveModalVisible(false);
+        setResolvingIssue(null);
+        resolveForm.resetFields();
+      }
+    });
   };
 
   const getTaskStatusIcon = (status: string) => {
@@ -294,6 +366,16 @@ export default function EquipmentPage() {
             </div>
           </div>
         );
+      },
+    },
+    {
+      title: '未处理事项',
+      key: 'unprocessedCount',
+      width: 110,
+      render: (_: any, record: any) => {
+        const count = equipmentIssueCount[record.id] || 0;
+        if (count === 0) return <span className="text-industrial-subtext">0</span>;
+        return <Badge count={count} style={{ backgroundColor: '#FF7D00' }} />;
       },
     },
     {
@@ -421,8 +503,8 @@ export default function EquipmentPage() {
         const total = record.items.length;
         return (
           <div className="flex items-center gap-2">
-            <Progress 
-              percent={Math.round((completed / total) * 100)} 
+            <Progress
+              percent={Math.round((completed / total) * 100)}
               size="small"
               className="w-24"
             />
@@ -463,11 +545,84 @@ export default function EquipmentPage() {
     },
   ];
 
+  const pendingIssueColumns = [
+    {
+      title: '设备名称',
+      dataIndex: 'equipmentName',
+      key: 'equipmentName',
+      width: 140,
+    },
+    {
+      title: '问题描述',
+      dataIndex: 'description',
+      key: 'description',
+      width: 150,
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 100,
+      render: (status: string) => {
+        const colorMap: Record<string, string> = {
+          pending: 'warning',
+          processing: 'processing',
+          resolved: 'success',
+        };
+        const textMap: Record<string, string> = {
+          pending: '待处理',
+          processing: '处理中',
+          resolved: '已处理',
+        };
+        return <Tag color={colorMap[status]}>{textMap[status]}</Tag>;
+      },
+    },
+    {
+      title: '创建时间',
+      dataIndex: 'createTime',
+      key: 'createTime',
+      width: 160,
+      render: (time: string) => formatDate(time),
+    },
+    {
+      title: '创建人',
+      dataIndex: 'creator',
+      key: 'creator',
+      width: 100,
+    },
+    {
+      title: '处理人',
+      dataIndex: 'resolver',
+      key: 'resolver',
+      width: 100,
+      render: (val?: string) => val || '-',
+    },
+    {
+      title: '处理时间',
+      dataIndex: 'resolveTime',
+      key: 'resolveTime',
+      width: 160,
+      render: (val?: string) => val ? formatDate(val) : '-',
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 100,
+      render: (_: any, record: PendingIssue) => (
+        record.status !== 'resolved' ? (
+          <Button type="link" size="small" onClick={() => handleResolveIssue(record)}>
+            处理
+          </Button>
+        ) : '-'
+      ),
+    },
+  ];
+
   const renderTaskDetail = () => {
     if (!displayTask) return null;
-    
+
     const types = Object.keys(groupedTaskItems);
-    
+
     return (
       <div className="space-y-4 pt-4">
         <div className="flex items-center justify-between mb-4">
@@ -497,13 +652,13 @@ export default function EquipmentPage() {
           <Row gutter={[16, 16]}>
             <Col xs={24} sm={8}>
               <div className="industrial-card text-center">
-                <Statistic 
+                <Statistic
                   title="完成率"
                   value={taskStats.rate}
                   suffix="%"
                   className="text-white"
                 />
-                <Progress 
+                <Progress
                   percent={taskStats.rate}
                   status={taskStats.rate === 100 ? 'success' : 'active'}
                   strokeColor="#165DFF"
@@ -514,7 +669,7 @@ export default function EquipmentPage() {
             </Col>
             <Col xs={24} sm={8}>
               <div className="industrial-card text-center">
-                <Statistic 
+                <Statistic
                   title="已完成"
                   value={taskStats.completed}
                   suffix="台"
@@ -524,7 +679,7 @@ export default function EquipmentPage() {
             </Col>
             <Col xs={24} sm={8}>
               <div className="industrial-card text-center">
-                <Statistic 
+                <Statistic
                   title="异常设备"
                   value={taskStats.abnormal}
                   suffix="台"
@@ -541,18 +696,29 @@ export default function EquipmentPage() {
             showIcon
             message={`发现 ${taskStats.abnormal} 台设备点检异常，请关注`}
             description={
-              <ul className="mt-2 space-y-1">
-                {displayTask.items
-                  .filter(i => i.result === 'warning' || i.result === 'fault')
-                  .map(item => (
-                    <li key={item.id} className="flex items-center justify-between">
-                      <span>{item.equipmentName}</span>
-                      <Tag color={item.result === 'fault' ? 'red' : 'orange'}>
-                        {item.result === 'fault' ? '故障' : '异常'}
-                      </Tag>
-                    </li>
-                  ))}
-              </ul>
+              <div>
+                <ul className="mt-2 space-y-1">
+                  {displayTask.items
+                    .filter(i => i.result === 'warning' || i.result === 'fault')
+                    .map(item => (
+                      <li key={item.id} className="flex items-center justify-between">
+                        <span>{item.equipmentName}</span>
+                        <Tag color={item.result === 'fault' ? 'red' : 'orange'}>
+                          {item.result === 'fault' ? '故障' : '异常'}
+                        </Tag>
+                      </li>
+                    ))}
+                </ul>
+                <Button
+                  type="primary"
+                  danger
+                  icon={<ClipboardList size={14} />}
+                  className="mt-3"
+                  onClick={handleConvertToPending}
+                >
+                  转为待处理事项
+                </Button>
+              </div>
             }
           />
         )}
@@ -561,12 +727,12 @@ export default function EquipmentPage() {
           const isExpanded = expandedTypes[type] !== false;
           const items = groupedTaskItems[type];
           const typeCompleted = items.filter(i => i.status === 'completed').length;
-          
+
           return (
-            <Card 
+            <Card
               key={type}
               title={
-                <div 
+                <div
                   className="flex items-center justify-between cursor-pointer -mx-4 -my-2 px-4 py-2"
                   onClick={() => toggleTypeExpand(type)}
                 >
@@ -650,6 +816,41 @@ export default function EquipmentPage() {
         <h3 className="text-lg font-medium text-white">今日巡检任务</h3>
       </div>
 
+      <Row gutter={[16, 16]} className="mb-4">
+        {shiftSummary.map(s => (
+          <Col xs={24} sm={8} key={s.key}>
+            <div className="industrial-card" style={{ borderLeft: `3px solid ${s.color}` }}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-medium text-white text-base">{s.label}</span>
+                {!s.exists && <Tag color="default">未创建</Tag>}
+                {s.exists && s.total > 0 && s.rate === 100 && <Tag color="success">已完成</Tag>}
+                {s.exists && s.total > 0 && s.rate < 100 && <Tag color="processing">进行中</Tag>}
+              </div>
+              {s.exists ? (
+                <>
+                  <Progress
+                    percent={s.rate}
+                    strokeColor={s.color}
+                    size="small"
+                    className="mb-2"
+                  />
+                  <div className="flex justify-between text-sm">
+                    <span className="text-industrial-subtext">
+                      已完成 <span className="text-green-400">{s.completed}</span>/{s.total}
+                    </span>
+                    <span className="text-industrial-subtext">
+                      异常 <span className={s.abnormal > 0 ? 'text-orange-400 font-semibold' : ''}>{s.abnormal}</span>
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="text-industrial-subtext text-sm py-2">暂无巡检任务</div>
+              )}
+            </div>
+          </Col>
+        ))}
+      </Row>
+
       <Card className="bg-industrial-card border-industrial-border">
         <div className="text-center py-8">
           <FileText size={48} className="mx-auto mb-4 text-industrial-subtext opacity-50" />
@@ -672,8 +873,8 @@ export default function EquipmentPage() {
       </Card>
 
       {todayTasks.length > 0 && (
-        <Card 
-          title="今日任务" 
+        <Card
+          title="今日任务"
           className="bg-industrial-card border-industrial-border"
           styles={{ header: { borderBottom: '1px solid #1E2A45' }, body: { padding: '16px' } }}
         >
@@ -688,8 +889,8 @@ export default function EquipmentPage() {
       )}
 
       {unitTasks.length > 0 && (
-        <Card 
-          title="历史巡检任务" 
+        <Card
+          title="历史巡检任务"
           className="bg-industrial-card border-industrial-border"
           styles={{ header: { borderBottom: '1px solid #1E2A45' }, body: { padding: '16px' } }}
         >
@@ -709,8 +910,8 @@ export default function EquipmentPage() {
     <div className="space-y-4 pt-4">
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
-          <Card 
-            title="设备状态统计" 
+          <Card
+            title="设备状态统计"
             className="bg-industrial-card border-industrial-border"
             styles={{ header: { borderBottom: '1px solid #1E2A45' }, body: { padding: '16px' } }}
           >
@@ -722,8 +923,8 @@ export default function EquipmentPage() {
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card 
-            title="设备运行时间统计" 
+          <Card
+            title="设备运行时间统计"
             className="bg-industrial-card border-industrial-border"
             styles={{ header: { borderBottom: '1px solid #1E2A45' }, body: { padding: '16px' } }}
           >
@@ -737,8 +938,8 @@ export default function EquipmentPage() {
         </Col>
       </Row>
 
-      <Card 
-        title="设备概览" 
+      <Card
+        title="设备概览"
         className="bg-industrial-card border-industrial-border"
         styles={{ header: { borderBottom: '1px solid #1E2A45' }, body: { padding: '16px' } }}
       >
@@ -760,8 +961,8 @@ export default function EquipmentPage() {
                   {last && (
                     <div className="text-xs text-industrial-subtext mb-3">
                       最近巡检: {formatDate(last.inspectionTime)}
-                      <Tag 
-                        color={getStatusColor(last.status)} 
+                      <Tag
+                        color={getStatusColor(last.status)}
                         style={{ marginLeft: 8, marginBottom: 0 }}
                       >
                         {last.status === 'normal' ? '正常' : last.status === 'warning' ? '异常' : '故障'}
@@ -825,8 +1026,8 @@ export default function EquipmentPage() {
         </Row>
       </Card>
 
-      <Card 
-        title="所有设备" 
+      <Card
+        title="所有设备"
         className="bg-industrial-card border-industrial-border"
         styles={{ header: { borderBottom: '1px solid #1E2A45' }, body: { padding: '16px' } }}
       >
@@ -843,8 +1044,8 @@ export default function EquipmentPage() {
 
   const inspectionRecordsContent = (
     <div className="pt-4">
-      <Card 
-        title="点检历史记录" 
+      <Card
+        title="点检历史记录"
         className="bg-industrial-card border-industrial-border"
         styles={{ header: { borderBottom: '1px solid #1E2A45' }, body: { padding: '16px' } }}
         extra={
@@ -882,6 +1083,31 @@ export default function EquipmentPage() {
     </div>
   );
 
+  const pendingIssuesContent = (
+    <div className="pt-4">
+      <Card
+        title="待处理事项"
+        className="bg-industrial-card border-industrial-border"
+        styles={{ header: { borderBottom: '1px solid #1E2A45' }, body: { padding: '16px' } }}
+        extra={
+          <Space>
+            <Tag color="warning">待处理 {pendingIssues.filter(i => i.status === 'pending').length}</Tag>
+            <Tag color="processing">处理中 {pendingIssues.filter(i => i.status === 'processing').length}</Tag>
+            <Tag color="success">已处理 {pendingIssues.filter(i => i.status === 'resolved').length}</Tag>
+          </Space>
+        }
+      >
+        <Table
+          dataSource={pendingIssues}
+          columns={pendingIssueColumns}
+          rowKey="id"
+          pagination={{ pageSize: 10 }}
+          className="data-table"
+        />
+      </Card>
+    </div>
+  );
+
   const equipmentTabItems = [
     {
       key: '1',
@@ -897,6 +1123,11 @@ export default function EquipmentPage() {
       key: '3',
       label: '点检记录',
       children: inspectionRecordsContent,
+    },
+    {
+      key: '4',
+      label: '待处理事项',
+      children: pendingIssuesContent,
     },
   ];
 
@@ -917,7 +1148,7 @@ export default function EquipmentPage() {
         </div>
       </div>
 
-      <Card 
+      <Card
         className="bg-industrial-card border-industrial-border"
         styles={{ header: { borderBottom: '1px solid #1E2A45' }, body: { padding: '0 16px 16px' } }}
       >
@@ -1015,6 +1246,44 @@ export default function EquipmentPage() {
               </Form.Item>
             </Col>
           </Row>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="处理待处理事项"
+        open={resolveModalVisible}
+        onOk={handleResolveSubmit}
+        onCancel={() => {
+          setResolveModalVisible(false);
+          setResolvingIssue(null);
+          resolveForm.resetFields();
+        }}
+        okText="确认处理"
+        cancelText="取消"
+        width={500}
+        styles={{ body: { backgroundColor: '#141A2E' } }}
+      >
+        {resolvingIssue && (
+          <div className="mb-4 p-3 bg-industrial-border/30 rounded-lg">
+            <div className="text-sm text-industrial-subtext mb-1">设备: <span className="text-white">{resolvingIssue.equipmentName}</span></div>
+            <div className="text-sm text-industrial-subtext">问题: <span className="text-white">{resolvingIssue.description}</span></div>
+          </div>
+        )}
+        <Form form={resolveForm} layout="vertical">
+          <Form.Item
+            name="resolver"
+            label="处理人"
+            rules={[{ required: true, message: '请输入处理人' }]}
+          >
+            <Input placeholder="请输入处理人姓名" />
+          </Form.Item>
+          <Form.Item
+            name="remark"
+            label="处理备注"
+            rules={[{ required: true, message: '请输入处理备注' }]}
+          >
+            <TextArea rows={3} placeholder="请输入处理备注..." />
+          </Form.Item>
         </Form>
       </Modal>
     </div>

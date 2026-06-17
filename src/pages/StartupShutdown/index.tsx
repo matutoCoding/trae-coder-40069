@@ -1,26 +1,27 @@
 import { useState, useEffect, useMemo } from 'react';
-import { 
-  Card, Table, Tag, Button, Modal, Timeline, Progress, Space, Select, Form, Input, 
-  List, message, Popconfirm, Tooltip 
+import {
+  Card, Table, Tag, Button, Modal, Timeline, Progress, Space, Select, Form, Input,
+  List, message, Popconfirm, Tooltip
 } from 'antd';
-import { 
-  Plus, Eye, Play, CheckCircle, Clock, FileText, Save, GripVertical, 
-  Trash2, Edit3, ArrowUp, ArrowDown, X 
+import {
+  Plus, Eye, Play, CheckCircle, Clock, FileText, Save, GripVertical,
+  Trash2, Edit3, ArrowUp, ArrowDown, X, AlertCircle, ClipboardCheck
 } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { getStartupTemplateSteps, getShutdownTemplateSteps } from '@/mock';
 import { getStatusText, getStatusBgColor, getPlanTypeText, formatDate, cn } from '@/utils';
-import type { ShutdownPlan, ShutdownPlanStep } from '@/types';
+import type { ShutdownPlan, ShutdownPlanStep, PlanReview } from '@/types';
 
 const { Option } = Select;
 const { TextArea } = Input;
 
 export default function StartupShutdown() {
-  const { 
+  const {
     shutdownPlans, currentUnitId, updateShutdownPlanStep, addShutdownPlan,
-    currentUser, saveDraftPlan, clearDraftPlan, draftPlan, updateShutdownPlanSteps
+    currentUser, saveDraftPlan, clearDraftPlan, draftPlan, updateShutdownPlanSteps,
+    savePlanReview
   } = useAppStore();
-  
+
   const [selectedPlan, setSelectedPlan] = useState<ShutdownPlan | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
   const [createVisible, setCreateVisible] = useState(false);
@@ -28,6 +29,8 @@ export default function StartupShutdown() {
   const [editSteps, setEditSteps] = useState<ShutdownPlanStep[]>([]);
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
   const [editStepForm] = Form.useForm();
+  const [reviewVisible, setReviewVisible] = useState(false);
+  const [reviewForm] = Form.useForm();
 
   useEffect(() => {
     const savedDraft = localStorage.getItem('fccu_draft_plan');
@@ -55,17 +58,22 @@ export default function StartupShutdown() {
     }
   }, [draftPlan, form]);
 
-  const unitPlans = useMemo(() => 
+  const unitPlans = useMemo(() =>
     shutdownPlans.filter(p => p.unitId === currentUnitId),
     [shutdownPlans, currentUnitId]
   );
 
-  const selectedPlanFromStore = useMemo(() => 
+  const selectedPlanFromStore = useMemo(() =>
     selectedPlan ? shutdownPlans.find(p => p.id === selectedPlan.id) : null,
     [shutdownPlans, selectedPlan?.id]
   );
 
   const displayPlan = selectedPlanFromStore || selectedPlan;
+
+  const skippedSteps = useMemo(() =>
+    displayPlan ? displayPlan.steps.filter(s => s.status === 'skipped') : [],
+    [displayPlan]
+  );
 
   const handleViewDetail = (plan: ShutdownPlan) => {
     setSelectedPlan(plan);
@@ -86,15 +94,15 @@ export default function StartupShutdown() {
   };
 
   const handleTypeChange = (type: 'startup' | 'shutdown') => {
-    const templateSteps = type === 'startup' 
-      ? getStartupTemplateSteps() 
+    const templateSteps = type === 'startup'
+      ? getStartupTemplateSteps()
       : getShutdownTemplateSteps();
-    
+
     const newSteps: ShutdownPlanStep[] = templateSteps.map((step, index) => ({
       ...step,
       id: `step_${Date.now()}_${index}`,
     }));
-    
+
     setEditSteps(newSteps);
     handleSaveDraft();
   };
@@ -166,7 +174,7 @@ export default function StartupShutdown() {
   };
 
   const handleMoveStep = (index: number, direction: 'up' | 'down') => {
-    if ((direction === 'up' && index === 0) || 
+    if ((direction === 'up' && index === 0) ||
         (direction === 'down' && index === editSteps.length - 1)) {
       return;
     }
@@ -188,8 +196,8 @@ export default function StartupShutdown() {
 
   const handleSaveStepEdit = () => {
     editStepForm.validateFields().then((values) => {
-      const newSteps = editSteps.map(s => 
-        s.id === editingStepId 
+      const newSteps = editSteps.map(s =>
+        s.id === editingStepId
           ? { ...s, name: values.name, description: values.description }
           : s
       );
@@ -247,6 +255,34 @@ export default function StartupShutdown() {
     }
   };
 
+  const handleOpenReview = () => {
+    reviewForm.resetFields();
+    if (displayPlan?.review) {
+      reviewForm.setFieldsValue({
+        summary: displayPlan.review.summary,
+        remainingIssues: displayPlan.review.remainingIssues,
+        attachments: displayPlan.review.attachments,
+      });
+    }
+    setReviewVisible(true);
+  };
+
+  const handleSubmitReview = () => {
+    reviewForm.validateFields().then((values) => {
+      const review: PlanReview = {
+        summary: values.summary,
+        remainingIssues: values.remainingIssues,
+        attachments: values.attachments || '',
+        reviewer: currentUser.name,
+        reviewTime: new Date().toLocaleString('zh-CN'),
+      };
+      savePlanReview(displayPlan!.id, review);
+      setReviewVisible(false);
+      reviewForm.resetFields();
+      message.success('复盘已保存');
+    });
+  };
+
   const calculateProgress = (plan: ShutdownPlan) => {
     const completed = plan.steps.filter(s => s.status === 'completed').length;
     const total = plan.steps.length;
@@ -299,8 +335,8 @@ export default function StartupShutdown() {
         const percent = calculateProgress(record);
         return (
           <div className="flex items-center gap-2">
-            <Progress 
-              percent={percent} 
+            <Progress
+              percent={percent}
               size="small"
               strokeColor={percent === 100 ? '#00B42A' : '#165DFF'}
               showInfo={false}
@@ -367,7 +403,7 @@ export default function StartupShutdown() {
         </Button>
       </div>
 
-      <Card 
+      <Card
         className="bg-industrial-card border-industrial-border"
         styles={{ header: { borderBottom: '1px solid #1E2A45' }, body: { padding: '16px' } }}
       >
@@ -413,8 +449,8 @@ export default function StartupShutdown() {
                   {getStatusText(displayPlan.status)}
                 </span>
                 <div className="mt-3">
-                  <Progress 
-                    percent={calculateProgress(displayPlan)} 
+                  <Progress
+                    percent={calculateProgress(displayPlan)}
                     size="small"
                     strokeColor={calculateProgress(displayPlan) === 100 ? '#00B42A' : '#165DFF'}
                   />
@@ -422,9 +458,24 @@ export default function StartupShutdown() {
               </div>
             </div>
 
-            {displayPlan.status === 'executing' || displayPlan.status === 'completed' ? (
-              <div className="p-4 bg-industrial-border/20 rounded-lg">
-                <h4 className="text-sm font-medium text-white mb-4">执行汇总</h4>
+            {(displayPlan.status === 'executing' || displayPlan.status === 'completed') && (
+              <div className="p-4 bg-industrial-border/20 rounded-lg border-l-4"
+                style={{ borderLeftColor: displayPlan.review ? '#165DFF' : '#00B42A' }}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-sm font-medium text-white">综合汇总</h4>
+                  {displayPlan.status === 'completed' && (
+                    <Button
+                      size="small"
+                      type="primary"
+                      icon={<ClipboardCheck size={14} />}
+                      onClick={handleOpenReview}
+                    >
+                      {displayPlan.review ? '编辑复盘' : '填写复盘'}
+                    </Button>
+                  )}
+                </div>
+
                 <Row gutter={[16, 16]}>
                   <Col xs={24} sm={8}>
                     <div className="text-center">
@@ -461,12 +512,14 @@ export default function StartupShutdown() {
                     </div>
                   </Col>
                 </Row>
+
                 {displayPlan.endTime && (
                   <div className="text-center mt-3 pt-3 border-t border-industrial-border">
                     <span className="text-xs text-industrial-subtext">完成时间: </span>
                     <span className="text-sm text-white">{displayPlan.endTime}</span>
                   </div>
                 )}
+
                 {[...new Set(displayPlan.steps.filter(s => s.operator).map(s => s.operator))].length > 0 && (
                   <div className="mt-3 pt-3 border-t border-industrial-border">
                     <div className="text-xs text-industrial-subtext mb-2">执行人列表</div>
@@ -477,8 +530,66 @@ export default function StartupShutdown() {
                     </div>
                   </div>
                 )}
+
+                {skippedSteps.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-industrial-border">
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertCircle size={14} className="text-orange-400" />
+                      <span className="text-xs text-orange-400 font-medium">
+                        异常步骤 ({skippedSteps.length})
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {skippedSteps.map(step => (
+                        <Tag key={step.id} color="warning">
+                          步骤 {step.order}: {step.name}
+                        </Tag>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {displayPlan.review && (
+                  <div className="mt-3 pt-3 border-t border-industrial-border">
+                    <div className="flex items-center gap-2 mb-3">
+                      <ClipboardCheck size={14} className="text-blue-400" />
+                      <span className="text-xs text-blue-400 font-medium">复盘总结</span>
+                    </div>
+                    <div className="space-y-2">
+                      <div>
+                        <div className="text-xs text-industrial-subtext mb-1">方案总结</div>
+                        <div className="text-sm text-white bg-industrial-border/30 p-2 rounded">
+                          {displayPlan.review.summary}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-industrial-subtext mb-1">遗留问题</div>
+                        <div className={cn(
+                          'text-sm p-2 rounded',
+                          displayPlan.review.remainingIssues
+                            ? 'text-orange-300 bg-orange-500/10 border border-orange-500/20'
+                            : 'text-white bg-industrial-border/30'
+                        )}>
+                          {displayPlan.review.remainingIssues || '无'}
+                        </div>
+                      </div>
+                      {displayPlan.review.attachments && (
+                        <div>
+                          <div className="text-xs text-industrial-subtext mb-1">附件说明</div>
+                          <div className="text-sm text-white bg-industrial-border/30 p-2 rounded">
+                            {displayPlan.review.attachments}
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-4 text-xs text-industrial-subtext pt-1">
+                        <span>复盘人: {displayPlan.review.reviewer}</span>
+                        <span>复盘时间: {displayPlan.review.reviewTime}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-            ) : null}
+            )}
 
             <div className="p-4">
               <h4 className="text-sm font-medium text-white mb-4">执行步骤</h4>
@@ -487,17 +598,21 @@ export default function StartupShutdown() {
                 items={[...displayPlan.steps]
                   .sort((a, b) => a.order - b.order)
                   .map((step, index) => ({
-                    color: step.status === 'completed' ? '#00B42A' : 
-                           step.status === 'in-progress' ? '#165DFF' : 
-                           step.status === 'skipped' ? '#86909C' : '#1E2A45',
+                    color: step.status === 'completed' ? '#00B42A' :
+                           step.status === 'in-progress' ? '#165DFF' :
+                           step.status === 'skipped' ? '#FF7D00' : '#1E2A45',
                     dot: step.status === 'completed' ? <CheckCircle size={16} /> :
                          step.status === 'in-progress' ? <Play size={16} className="animate-pulse" /> :
+                         step.status === 'skipped' ? <AlertCircle size={16} className="text-orange-400" /> :
                          <Clock size={16} />,
                     children: (
                       <div className="pb-4">
                         <div className="flex items-start justify-between mb-2">
                           <div>
-                            <div className="font-medium text-white">
+                            <div className={cn(
+                              'font-medium',
+                              step.status === 'skipped' ? 'text-orange-300' : 'text-white'
+                            )}>
                               步骤 {step.order}: {step.name}
                             </div>
                             <div className="text-sm text-industrial-subtext mt-1">
@@ -524,11 +639,13 @@ export default function StartupShutdown() {
                           <div className="flex items-center gap-2">
                             <span className={cn(
                               'px-2 py-0.5 rounded text-xs border',
-                              getStatusBgColor(step.status)
+                              step.status === 'skipped'
+                                ? 'bg-orange-500/10 text-orange-300 border-orange-500/30'
+                                : getStatusBgColor(step.status)
                             )}>
-                              {getStatusText(step.status)}
+                              {step.status === 'skipped' ? '已跳过' : getStatusText(step.status)}
                             </span>
-                            {displayPlan.status !== 'completed' && 
+                            {displayPlan.status !== 'completed' &&
                              displayPlan.status !== 'cancelled' &&
                              displayPlan.status !== 'draft' &&
                              step.status !== 'completed' &&
@@ -553,6 +670,39 @@ export default function StartupShutdown() {
       </Modal>
 
       <Modal
+        title="填写复盘"
+        open={reviewVisible}
+        onCancel={() => setReviewVisible(false)}
+        onOk={handleSubmitReview}
+        width={600}
+        okText="提交复盘"
+        styles={{ body: { backgroundColor: '#141A2E' } }}
+      >
+        <Form form={reviewForm} layout="vertical" className="mt-4">
+          <Form.Item
+            name="summary"
+            label="方案总结"
+            rules={[{ required: true, message: '请输入方案总结' }]}
+          >
+            <TextArea rows={4} placeholder="请输入方案总结" />
+          </Form.Item>
+          <Form.Item
+            name="remainingIssues"
+            label="遗留问题"
+            rules={[{ required: true, message: '请输入遗留问题' }]}
+          >
+            <TextArea rows={3} placeholder="请输入遗留问题，如无请填写'无'" />
+          </Form.Item>
+          <Form.Item
+            name="attachments"
+            label="附件说明"
+          >
+            <Input placeholder="请输入附件说明（选填）" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
         title={draftPlan ? '编辑方案草稿' : '新建开停工方案'}
         open={createVisible}
         onCancel={handleCloseCreateModal}
@@ -562,8 +712,8 @@ export default function StartupShutdown() {
         okText="提交方案"
         footer={(_, { OkBtn, CancelBtn }) => (
           <div className="flex justify-between">
-            <Button 
-              icon={<Save size={14} />} 
+            <Button
+              icon={<Save size={14} />}
               onClick={handleSaveDraft}
             >
               保存草稿
@@ -592,7 +742,7 @@ export default function StartupShutdown() {
                 label="方案类型"
                 rules={[{ required: true, message: '请选择方案类型' }]}
               >
-                <Select 
+                <Select
                   placeholder="请选择方案类型"
                   onChange={(value) => handleTypeChange(value)}
                 >
@@ -620,16 +770,16 @@ export default function StartupShutdown() {
         <div className="mt-4">
           <div className="flex items-center justify-between mb-3">
             <h4 className="text-sm font-medium text-white">步骤管理</h4>
-            <Button 
-              type="primary" 
-              size="small" 
+            <Button
+              type="primary"
+              size="small"
               icon={<Plus size={14} />}
               onClick={handleAddStep}
             >
               添加步骤
             </Button>
           </div>
-          
+
           {editSteps.length === 0 ? (
             <div className="text-center py-8 text-industrial-subtext border border-dashed border-industrial-border rounded-lg">
               <FileText size={32} className="mx-auto mb-2 opacity-50" />
@@ -691,27 +841,27 @@ export default function StartupShutdown() {
                       </div>
                       <div className="flex items-center gap-1">
                         <Tooltip title="上移">
-                          <Button 
-                            type="text" 
-                            size="small" 
+                          <Button
+                            type="text"
+                            size="small"
                             icon={<ArrowUp size={14} />}
                             disabled={index === 0}
                             onClick={() => handleMoveStep(index, 'up')}
                           />
                         </Tooltip>
                         <Tooltip title="下移">
-                          <Button 
-                            type="text" 
-                            size="small" 
+                          <Button
+                            type="text"
+                            size="small"
                             icon={<ArrowDown size={14} />}
                             disabled={index === editSteps.length - 1}
                             onClick={() => handleMoveStep(index, 'down')}
                           />
                         </Tooltip>
                         <Tooltip title="编辑">
-                          <Button 
-                            type="text" 
-                            size="small" 
+                          <Button
+                            type="text"
+                            size="small"
                             icon={<Edit3 size={14} />}
                             onClick={() => handleEditStep(step)}
                           />
@@ -721,9 +871,9 @@ export default function StartupShutdown() {
                           description="确定要删除这个步骤吗？"
                           onConfirm={() => handleDeleteStep(step.id)}
                         >
-                          <Button 
-                            type="text" 
-                            size="small" 
+                          <Button
+                            type="text"
+                            size="small"
                             danger
                             icon={<Trash2 size={14} />}
                           />
@@ -756,8 +906,8 @@ function Col(props: any) {
     return classes.join(' ');
   };
   return (
-    <div 
-      className={cn('px-2', getColClass(), props.className)} 
+    <div
+      className={cn('px-2', getColClass(), props.className)}
       style={{ padding: '0 8px', ...props.style }}
     >
       {props.children}

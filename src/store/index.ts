@@ -20,6 +20,8 @@ import type {
   Unit,
   ShutdownPlan,
   ShutdownPlanStep,
+  PlanReview,
+  PendingIssue,
   Catalyst,
   CatalystLoss,
   ReactorParam,
@@ -52,6 +54,7 @@ interface AppState {
   inspections: Inspection[];
   inspectionTasks: InspectionTask[];
   currentInspectionTask: InspectionTask | null;
+  pendingIssues: PendingIssue[];
   parameters: Parameter[];
   alarms: Alarm[];
   currentUnitId: string;
@@ -69,6 +72,9 @@ interface AppState {
   updateInspectionTaskItem: (taskId: string, itemId: string, data: Partial<InspectionTaskItem>) => void;
   completeInspectionTask: (taskId: string) => void;
   setCurrentInspectionTask: (task: InspectionTask | null) => void;
+  savePlanReview: (planId: string, review: PlanReview) => void;
+  addPendingIssue: (issue: Omit<PendingIssue, 'id' | 'createTime'>) => void;
+  resolvePendingIssue: (issueId: string, resolver: string, remark: string) => void;
 }
 
 const generateId = () => `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -93,6 +99,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   inspections: mockInspections,
   inspectionTasks: mockInspectionTasks,
   currentInspectionTask: null,
+  pendingIssues: [],
   parameters: mockParameters,
   alarms: mockAlarms,
   currentUnitId: 'u1',
@@ -182,7 +189,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
 
-  clearAlarm: (alarmId: string, handleRemark?: string) => {
+  clearAlarm: (alarmId: string, clearRemark?: string) => {
     set((state) => ({
       alarms: state.alarms.map((a) =>
         a.id === alarmId
@@ -190,7 +197,7 @@ export const useAppStore = create<AppState>((set, get) => ({
               ...a,
               status: 'cleared',
               clearTime: getNow(),
-              handleRemark: handleRemark || a.handleRemark,
+              clearRemark,
             }
           : a
       ),
@@ -377,5 +384,40 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setCurrentInspectionTask: (task: InspectionTask | null) => {
     set({ currentInspectionTask: task });
+  },
+
+  savePlanReview: (planId: string, review: PlanReview) => {
+    set((state) => ({
+      shutdownPlans: state.shutdownPlans.map((plan) =>
+        plan.id === planId ? { ...plan, review } : plan
+      ),
+    }));
+  },
+
+  addPendingIssue: (issue: Omit<PendingIssue, 'id' | 'createTime'>) => {
+    const newIssue: PendingIssue = {
+      ...issue,
+      id: generateId(),
+      createTime: getNow(),
+    };
+    set((state) => ({
+      pendingIssues: [newIssue, ...state.pendingIssues],
+    }));
+  },
+
+  resolvePendingIssue: (issueId: string, resolver: string, remark: string) => {
+    set((state) => ({
+      pendingIssues: state.pendingIssues.map((issue) =>
+        issue.id === issueId
+          ? {
+              ...issue,
+              status: 'resolved' as const,
+              resolver,
+              resolveTime: getNow(),
+              resolveRemark: remark,
+            }
+          : issue
+      ),
+    }));
   },
 }));
