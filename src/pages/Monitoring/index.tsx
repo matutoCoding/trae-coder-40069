@@ -21,6 +21,7 @@ export default function Monitoring() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedAlarmPoint, setSelectedAlarmPoint] = useState<any>(null);
   const [alarmDetailVisible, setAlarmDetailVisible] = useState(false);
+  const [focusAlarmTime, setFocusAlarmTime] = useState<string | null>(null);
   const [historyLevelFilter, setHistoryLevelFilter] = useState<string>('all');
   const [historyParamFilter, setHistoryParamFilter] = useState<string>('all');
   const [historyStatusFilter, setHistoryStatusFilter] = useState<string>('all');
@@ -110,7 +111,9 @@ export default function Monitoring() {
       let matchDate = true;
       if (historyDateRange && historyDateRange[0] && historyDateRange[1]) {
         const alarmDate = dayjs(alarm.alarmTime);
-        matchDate = alarmDate.isAfter(historyDateRange[0]) && alarmDate.isBefore(historyDateRange[1]);
+        const startDate = historyDateRange[0].startOf('day');
+        const endDate = historyDateRange[1].endOf('day');
+        matchDate = !alarmDate.isBefore(startDate) && !alarmDate.isAfter(endDate);
       }
       return matchLevel && matchParam && matchStatus && matchOperator && matchDate;
     });
@@ -131,8 +134,9 @@ export default function Monitoring() {
     setAlarmDetailVisible(true);
   };
 
-  const handleViewTrend = (parameterId: string) => {
+  const handleViewTrend = (parameterId: string, alarmTime?: string) => {
     setSelectedParam(parameterId);
+    setFocusAlarmTime(alarmTime || null);
     setActiveTab('1');
   };
 
@@ -293,7 +297,7 @@ export default function Monitoring() {
           type="link"
           size="small"
           icon={<ExternalLink size={14} />}
-          onClick={() => handleViewTrend(record.parameterId)}
+          onClick={() => handleViewTrend(record.parameterId, record.alarmTime)}
         >
           查看趋势
         </Button>
@@ -433,16 +437,23 @@ export default function Monitoring() {
             className="bg-industrial-card border-industrial-border"
             styles={{ header: { borderBottom: '1px solid #1E2A45' }, body: { padding: '16px' } }}
             extra={
-              <Select
-                value={selectedParam}
-                onChange={setSelectedParam}
-                style={{ width: 200 }}
-                size="small"
-              >
-                {parameters.map(p => (
-                  <Option key={p.id} value={p.id}>{p.name} ({p.tag})</Option>
-                ))}
-              </Select>
+              <Space>
+                {focusAlarmTime && (
+                  <Tag color="red" className="animate-pulse">
+                    定位报警: {focusAlarmTime}
+                  </Tag>
+                )}
+                <Select
+                  value={selectedParam}
+                  onChange={(v) => { setSelectedParam(v); setFocusAlarmTime(null); }}
+                  style={{ width: 200 }}
+                  size="small"
+                >
+                  {parameters.map(p => (
+                    <Option key={p.id} value={p.id}>{p.name} ({p.tag})</Option>
+                  ))}
+                </Select>
+              </Space>
             }
           >
             <Row gutter={[16, 16]}>
@@ -456,6 +467,7 @@ export default function Monitoring() {
                   lowerLimit={selectedParameter?.lowerLimit}
                   alarmPoints={alarmPoints}
                   alarmPointClick={handleAlarmPointClick}
+                  focusTime={focusAlarmTime}
                 />
               </Col>
               <Col xs={24} lg={8}>

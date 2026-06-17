@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import ReactECharts from 'echarts-for-react';
 import type { TrendDataPoint, AlarmPoint } from '@/types';
 
@@ -12,6 +13,7 @@ interface LineChartProps {
   lowerLimit?: number;
   alarmPoints?: AlarmPoint[];
   alarmPointClick?: (point: AlarmPoint) => void;
+  focusTime?: string | null;
 }
 
 export default function LineChart({
@@ -25,7 +27,36 @@ export default function LineChart({
   lowerLimit,
   alarmPoints = [],
   alarmPointClick,
+  focusTime,
 }: LineChartProps) {
+  const chartRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (focusTime && chartRef.current && data.length > 0) {
+      const instance = chartRef.current.getEchartsInstance?.() || chartRef.current?.echarts;
+      if (!instance) return;
+
+      const timeStrings = data.map(d => d.time);
+      const focusIdx = timeStrings.findIndex(t => t === focusTime || t.startsWith(focusTime.substring(0, 16)));
+
+      if (focusIdx >= 0) {
+        const totalPoints = data.length;
+        const windowSize = Math.min(48, totalPoints);
+        const halfWindow = Math.floor(windowSize / 2);
+        const startIdx = Math.max(0, focusIdx - halfWindow);
+        const endIdx = Math.min(totalPoints - 1, focusIdx + halfWindow);
+        const startPercent = (startIdx / totalPoints) * 100;
+        const endPercent = ((endIdx + 1) / totalPoints) * 100;
+
+        instance.dispatchAction({
+          type: 'dataZoom',
+          start: startPercent,
+          end: endPercent,
+        });
+      }
+    }
+  }, [focusTime, data]);
+
   const series: any[] = [
     {
       name: title || '数据',
@@ -90,12 +121,12 @@ export default function LineChart({
     series.push({
       name: '报警点',
       type: 'scatter',
-      symbolSize: 12,
+      symbolSize: 14,
       data: alarmPoints.map(ap => ({
         value: [ap.time, ap.value],
         itemStyle: {
           color: ap.level === 'alarm' ? '#F53F3F' : '#FF7D00',
-          shadowBlur: 10,
+          shadowBlur: 12,
           shadowColor: ap.level === 'alarm' ? '#F53F3F' : '#FF7D00',
         },
         symbol: 'pin',
@@ -104,7 +135,7 @@ export default function LineChart({
         formatter: (params: any) => {
           const point = alarmPoints.find(ap => ap.time === params.value[0]);
           if (!point) return '';
-          
+
           const levelText = point.level === 'alarm' ? '报警' : '警告';
           const statusMap: Record<string, string> = {
             active: '活动',
@@ -118,7 +149,7 @@ export default function LineChart({
           };
           const statusText = point.status ? statusMap[point.status] : '';
           const statusColor = point.status ? statusColorMap[point.status] : '';
-          
+
           let html = `<div style="min-width:200px">
             <div style="color:#8A94A6;font-size:12px;margin-bottom:6px">${point.time}</div>
             <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
@@ -128,31 +159,67 @@ export default function LineChart({
             <div style="color:#8A94A6;font-size:12px;margin-bottom:2px">
               限值: <span style="font-family:monospace;color:#F53F3F">${point.limitValue}</span>
             </div>`;
-          
+
           if (point.status) {
             html += `<div style="color:#8A94A6;font-size:12px;margin-bottom:2px">
               状态: <span style="color:${statusColor}">${statusText}</span>
             </div>`;
           }
-          
+
           if (point.operator) {
             html += `<div style="color:#8A94A6;font-size:12px;margin-bottom:2px">
               处理人: ${point.operator}
             </div>`;
           }
-          
+
           if (point.handleRemark) {
             html += `<div style="color:#8A94A6;font-size:12px;margin-top:6px;padding-top:6px;border-top:1px solid #1E2A45">
-              处理意见: <span style="color:#E6E8EF">${point.handleRemark}</span>
+              确认意见: <span style="color:#E6E8EF">${point.handleRemark}</span>
             </div>`;
           }
-          
+
+          if (point.clearRemark) {
+            html += `<div style="color:#8A94A6;font-size:12px;margin-top:4px;padding-top:4px;border-top:1px solid #1E2A45">
+              消除意见: <span style="color:#E6E8EF">${point.clearRemark}</span>
+            </div>`;
+          }
+
           html += '</div>';
           return html;
         },
       },
     });
   }
+
+  const dataZoomConfig = focusTime ? [
+    {
+      type: 'inside',
+      xAxisIndex: 0,
+      filterMode: 'filter',
+    },
+    {
+      type: 'slider',
+      xAxisIndex: 0,
+      filterMode: 'filter',
+      height: 20,
+      bottom: 5,
+      borderColor: '#1E2A45',
+      backgroundColor: '#141A2E',
+      fillerColor: 'rgba(22, 93, 255, 0.2)',
+      handleStyle: {
+        color: '#165DFF',
+        borderColor: '#165DFF',
+      },
+      textStyle: {
+        color: '#8A94A6',
+        fontSize: 10,
+      },
+      dataBackground: {
+        lineStyle: { color: '#165DFF' },
+        areaStyle: { color: 'rgba(22, 93, 255, 0.1)' },
+      },
+    },
+  ] : [];
 
   const option = {
     backgroundColor: 'transparent',
@@ -195,7 +262,7 @@ export default function LineChart({
     grid: {
       top: title ? 50 : 20,
       right: 20,
-      bottom: 30,
+      bottom: focusTime ? 60 : 30,
       left: 50,
     },
     xAxis: {
@@ -243,15 +310,22 @@ export default function LineChart({
         fontSize: 11,
       },
     } : { show: false },
+    dataZoom: dataZoomConfig.length > 0 ? dataZoomConfig : undefined,
     series,
   };
 
-  return <ReactECharts option={option} style={{ height }} opts={{ renderer: 'canvas' }} onEvents={{
-    click: (params: any) => {
-      if (params.seriesName === '报警点' && alarmPointClick) {
-        const point = alarmPoints.find(ap => ap.time === params.value[0] && ap.value === params.value[1]);
-        if (point) alarmPointClick(point);
+  return <ReactECharts
+    ref={chartRef}
+    option={option}
+    style={{ height }}
+    opts={{ renderer: 'canvas' }}
+    onEvents={{
+      click: (params: any) => {
+        if (params.seriesName === '报警点' && alarmPointClick) {
+          const point = alarmPoints.find(ap => ap.time === params.value[0] && ap.value === params.value[1]);
+          if (point) alarmPointClick(point);
+        }
       }
-    }
-  }} />;
+    }}
+  />;
 }

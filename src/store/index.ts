@@ -81,12 +81,46 @@ const generateId = () => `id_${Date.now()}_${Math.random().toString(36).substr(2
 
 const getNow = () => new Date().toISOString().replace('T', ' ').substr(0, 19);
 
+const STORAGE_KEYS = {
+  alarms: 'fccu_alarms',
+  shutdownPlans: 'fccu_shutdown_plans',
+  pendingIssues: 'fccu_pending_issues',
+  inspectionTasks: 'fccu_inspection_tasks',
+  inspections: 'fccu_inspections',
+};
+
+const loadFromStorage = <T>(key: string, fallback: T): T => {
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored) return JSON.parse(stored);
+  } catch (e) {
+    console.error(`Failed to load ${key} from localStorage`);
+  }
+  return fallback;
+};
+
+const saveToStorage = (key: string, data: any) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (e) {
+    console.error(`Failed to save ${key} to localStorage`);
+  }
+};
+
+const persistState = (state: Partial<AppState>) => {
+  if (state.alarms !== undefined) saveToStorage(STORAGE_KEYS.alarms, state.alarms);
+  if (state.shutdownPlans !== undefined) saveToStorage(STORAGE_KEYS.shutdownPlans, state.shutdownPlans);
+  if (state.pendingIssues !== undefined) saveToStorage(STORAGE_KEYS.pendingIssues, state.pendingIssues);
+  if (state.inspectionTasks !== undefined) saveToStorage(STORAGE_KEYS.inspectionTasks, state.inspectionTasks);
+  if (state.inspections !== undefined) saveToStorage(STORAGE_KEYS.inspections, state.inspections);
+};
+
 const mockInspectionTasks: InspectionTask[] = [];
 
 export const useAppStore = create<AppState>((set, get) => ({
   currentUser: mockCurrentUser,
   units: mockUnits,
-  shutdownPlans: mockShutdownPlans,
+  shutdownPlans: loadFromStorage(STORAGE_KEYS.shutdownPlans, mockShutdownPlans),
   draftPlan: null,
   catalysts: mockCatalysts,
   catalystLosses: mockCatalystLosses,
@@ -96,12 +130,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   absorptionParams: mockAbsorptionParams,
   energyData: mockEnergyData,
   equipment: mockEquipment,
-  inspections: mockInspections,
-  inspectionTasks: mockInspectionTasks,
+  inspections: loadFromStorage(STORAGE_KEYS.inspections, mockInspections),
+  inspectionTasks: loadFromStorage(STORAGE_KEYS.inspectionTasks, mockInspectionTasks),
   currentInspectionTask: null,
-  pendingIssues: [],
+  pendingIssues: loadFromStorage(STORAGE_KEYS.pendingIssues, []),
   parameters: mockParameters,
-  alarms: mockAlarms,
+  alarms: loadFromStorage(STORAGE_KEYS.alarms, mockAlarms),
   currentUnitId: 'u1',
 
   updateParams: () => {
@@ -174,8 +208,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   acknowledgeAlarm: (alarmId: string, operator: string, handleRemark?: string) => {
-    set((state) => ({
-      alarms: state.alarms.map((a) =>
+    const newState: Partial<AppState> = {
+      alarms: get().alarms.map((a) =>
         a.id === alarmId
           ? {
               ...a,
@@ -186,12 +220,14 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
           : a
       ),
-    }));
+    };
+    set(newState);
+    persistState(newState);
   },
 
   clearAlarm: (alarmId: string, clearRemark?: string) => {
-    set((state) => ({
-      alarms: state.alarms.map((a) =>
+    const newState: Partial<AppState> = {
+      alarms: get().alarms.map((a) =>
         a.id === alarmId
           ? {
               ...a,
@@ -201,7 +237,9 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
           : a
       ),
-    }));
+    };
+    set(newState);
+    persistState(newState);
   },
 
   setCurrentUnitId: (id: string) => {
@@ -210,8 +248,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   updateShutdownPlanStep: (planId: string, stepId: string, status: string, operator?: string) => {
     const now = new Date().toISOString().replace('T', ' ').substr(0, 19);
-    set((state) => ({
-      shutdownPlans: state.shutdownPlans.map((plan) => {
+    const newState: Partial<AppState> = {
+      shutdownPlans: get().shutdownPlans.map((plan) => {
         if (plan.id !== planId) return plan;
         
         const newSteps = plan.steps.map((step) => {
@@ -249,7 +287,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           steps: newSteps,
         };
       }),
-    }));
+    };
+    set(newState);
+    persistState(newState);
   },
 
   addInspection: (inspection: Omit<Inspection, 'id'>) => {
@@ -257,9 +297,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...inspection,
       id: `i${Date.now()}`,
     };
-    set((state) => ({
-      inspections: [newInspection, ...state.inspections],
-    }));
+    const newState: Partial<AppState> = {
+      inspections: [newInspection, ...get().inspections],
+    };
+    set(newState);
+    persistState(newState);
   },
 
   addShutdownPlan: (plan: Omit<ShutdownPlan, 'id' | 'createTime'>) => {
@@ -268,17 +310,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       id: generateId(),
       createTime: getNow(),
     };
-    set((state) => ({
-      shutdownPlans: [newPlan, ...state.shutdownPlans],
-    }));
+    const newState: Partial<AppState> = {
+      shutdownPlans: [newPlan, ...get().shutdownPlans],
+    };
+    set(newState);
+    persistState(newState);
   },
 
   updateShutdownPlanSteps: (planId: string, steps: ShutdownPlanStep[]) => {
-    set((state) => ({
-      shutdownPlans: state.shutdownPlans.map((plan) =>
+    const newState: Partial<AppState> = {
+      shutdownPlans: get().shutdownPlans.map((plan) =>
         plan.id === planId ? { ...plan, steps } : plan
       ),
-    }));
+    };
+    set(newState);
+    persistState(newState);
   },
 
   saveDraftPlan: (plan: Partial<ShutdownPlan>) => {
@@ -319,67 +365,76 @@ export const useAppStore = create<AppState>((set, get) => ({
       createTime: getNow(),
     };
 
-    set((state) => ({
-      inspectionTasks: [newTask, ...state.inspectionTasks],
+    const newState: Partial<AppState> = {
+      inspectionTasks: [newTask, ...get().inspectionTasks],
       currentInspectionTask: newTask,
-    }));
+    };
+    set(newState);
+    persistState(newState);
   },
 
   updateInspectionTaskItem: (taskId: string, itemId: string, data: Partial<InspectionTaskItem>) => {
-    set((state) => ({
-      inspectionTasks: state.inspectionTasks.map((task) => {
-        if (task.id !== taskId) return task;
-        const hasInProgress = task.items.some((i) => i.status === 'in-progress');
-        return {
-          ...task,
-          status: hasInProgress || data.status === 'in-progress' ? 'in-progress' : task.status,
-          startTime: task.startTime || getNow(),
-          items: task.items.map((item) => {
-            if (item.id !== itemId) return item;
-            const updatedItem = { ...item, ...data };
-            if (data.status === 'completed') {
-              updatedItem.completedTime = getNow();
-              const inspectionData: Omit<Inspection, 'id'> = {
-                equipmentId: item.equipmentId,
-                inspector: state.currentUser.name,
-                inspectionTime: getNow(),
-                status: data.result || 'normal',
-                vibration: data.vibration,
-                temperature: data.temperature,
-                pressure: data.pressure,
-                current: data.current,
-                remarks: data.remark || '',
-              };
-              const newInspection: Inspection = {
-                ...inspectionData,
-                id: generateId(),
-              };
-              state.inspections = [newInspection, ...state.inspections];
-            }
-            return updatedItem;
-          }),
-        };
-      }),
+    const state = get();
+    let newInspections = [...state.inspections];
+    
+    const updatedTasks = state.inspectionTasks.map((task) => {
+      if (task.id !== taskId) return task;
+      const hasInProgress = task.items.some((i) => i.status === 'in-progress');
+      return {
+        ...task,
+        status: hasInProgress || data.status === 'in-progress' ? 'in-progress' : task.status,
+        startTime: task.startTime || getNow(),
+        items: task.items.map((item) => {
+          if (item.id !== itemId) return item;
+          const updatedItem = { ...item, ...data };
+          if (data.status === 'completed') {
+            updatedItem.completedTime = getNow();
+            const newInspection: Inspection = {
+              id: generateId(),
+              equipmentId: item.equipmentId,
+              inspector: state.currentUser.name,
+              inspectionTime: getNow(),
+              status: data.result || 'normal',
+              vibration: data.vibration,
+              temperature: data.temperature,
+              pressure: data.pressure,
+              current: data.current,
+              remarks: data.remark || '',
+            };
+            newInspections = [newInspection, ...newInspections];
+          }
+          return updatedItem;
+        }),
+      };
+    });
+    
+    const newState: Partial<AppState> = {
+      inspectionTasks: updatedTasks,
+      inspections: newInspections,
       currentInspectionTask: state.currentInspectionTask?.id === taskId
-        ? state.inspectionTasks.find((t) => t.id === taskId) || null
+        ? updatedTasks.find((t) => t.id === taskId) || null
         : state.currentInspectionTask,
-    }));
+    };
+    set(newState);
+    persistState(newState);
   },
 
   completeInspectionTask: (taskId: string) => {
-    set((state) => ({
-      inspectionTasks: state.inspectionTasks.map((task) =>
+    const newState: Partial<AppState> = {
+      inspectionTasks: get().inspectionTasks.map((task) =>
         task.id === taskId
           ? {
               ...task,
               status: 'completed',
               endTime: getNow(),
-              inspector: state.currentUser.name,
+              inspector: get().currentUser.name,
             }
           : task
       ),
       currentInspectionTask: null,
-    }));
+    };
+    set(newState);
+    persistState(newState);
   },
 
   setCurrentInspectionTask: (task: InspectionTask | null) => {
@@ -387,11 +442,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   savePlanReview: (planId: string, review: PlanReview) => {
-    set((state) => ({
-      shutdownPlans: state.shutdownPlans.map((plan) =>
+    const newState: Partial<AppState> = {
+      shutdownPlans: get().shutdownPlans.map((plan) =>
         plan.id === planId ? { ...plan, review } : plan
       ),
-    }));
+    };
+    set(newState);
+    persistState(newState);
   },
 
   addPendingIssue: (issue: Omit<PendingIssue, 'id' | 'createTime'>) => {
@@ -400,14 +457,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       id: generateId(),
       createTime: getNow(),
     };
-    set((state) => ({
-      pendingIssues: [newIssue, ...state.pendingIssues],
-    }));
+    const newState: Partial<AppState> = {
+      pendingIssues: [newIssue, ...get().pendingIssues],
+    };
+    set(newState);
+    persistState(newState);
   },
 
   resolvePendingIssue: (issueId: string, resolver: string, remark: string) => {
-    set((state) => ({
-      pendingIssues: state.pendingIssues.map((issue) =>
+    const newState: Partial<AppState> = {
+      pendingIssues: get().pendingIssues.map((issue) =>
         issue.id === issueId
           ? {
               ...issue,
@@ -418,6 +477,8 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
           : issue
       ),
-    }));
+    };
+    set(newState);
+    persistState(newState);
   },
 }));
